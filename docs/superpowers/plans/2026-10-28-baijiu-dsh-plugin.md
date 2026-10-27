@@ -4,7 +4,7 @@
 
 **Goal:** 把白酒学伴的"讲解 → 答疑 → 出题 → 批改 → 补学"代码级状态机移植为 DeepSeek Harness 的一个独立 bundle 插件。
 
-**Architecture:** 插件在 `apply(ctx, config)` 中注册两个条件工具（`submit_quiz` / `submit_grade`）、四个斜杠命令、一个按阶段渲染的 system 提示段，并监听 `agent/pre-step` 与 `turn/end` 做状态迁移。会话状态保存在插件内的 LRU Map，键为 `sessionId`。题目与批改结果用工具 schema 承载，因此不存在答案泄漏的可能。
+**Architecture:** 插件在 `apply(ctx, config)` 中注册两个工具（`submit_quiz` / `submit_grade`）、四个斜杠命令、一个按阶段渲染的 system 提示段，并监听 `agent/pre-step` 与 `turn/end` 做状态迁移。会话状态保存在插件内的 LRU Map，键为 `sessionId`。题目与批改结果用工具 schema 承载，因此不存在答案泄漏的可能。
 
 **Tech Stack:** TypeScript（ESM，`tsc` 编译到 `lib/`）、Schemastery 配置、vitest、Cordis 插件 API（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-llm`）、`@deepseek-ai/dsh` CLI 0.2.1-rc.2。
 
@@ -146,7 +146,20 @@ export function apply(ctx: Context): void {
       name: dsh-baijiu-companion
 ```
 
-- [ ] **Step 4: 安装依赖并构建**
+- [ ] **Step 4: 安装 dsh CLI 并验证关键 API 存在**
+
+```powershell
+npm i -g @deepseek-ai/dsh@0.2.1-rc.2
+dsh --version
+$root = npm root -g
+$tools = "$root\@deepseek-ai\dsh\node_modules\@deepseek-ai\dsh-tools\lib\types\index.d.ts"
+Select-String -Path $tools -Pattern "concludeTurn|restrict\("
+```
+
+预期：两条模式都能命中（`concludeTurn` 供工具收尾；`restrict` 是本计划暂不使用的备选闸门）。
+**不要**再查找 `when?`——已核实发布版没有该 API，本计划不依赖它。
+
+- [ ] **Step 5: 安装依赖并构建**
 
 ```powershell
 pnpm install
@@ -154,19 +167,6 @@ pnpm run build
 ```
 
 预期：`lib/index.js` 与 `lib/index.d.ts` 生成，无报错。
-
-- [ ] **Step 5: 安装 dsh CLI 并验证关键 API 存在**
-
-```powershell
-npm i -g @deepseek-ai/dsh@0.2.1-rc.2
-dsh --version
-$root = npm root -g
-$tools = Get-ChildItem -Recurse -Filter index.d.ts "$root\@deepseek-ai\dsh\node_modules\@deepseek-ai\dsh-tools\lib" | Select-Object -First 1
-Select-String -Path $tools.FullName -Pattern "concludeTurn|restrict\(" -List
-```
-
-预期：两条模式都能命中（`concludeTurn` 供工具收尾；`restrict` 是本计划暂不使用的备选闸门）。
-**不要**再查找 `when?`——已核实发布版没有该 API，本计划不依赖它。
 
 - [ ] **Step 6: 安装插件到 profile 并确认补丁层生效**
 
@@ -854,7 +854,7 @@ export function formatQuiz(topic: string, questions: readonly QuizQuestion[]): s
 }
 
 /**
- * 注册 `submit_quiz` 工具，仅在"出题态且尚无题目"时对模型可见。
+ * 注册 `submit_quiz` 工具，仅在"出题态且尚无题目"时可执行。
  * @param ctx - Cordis 上下文。
  * @param store - 会话状态表。
  * @param config - 插件配置。
@@ -1088,7 +1088,7 @@ export function formatFeedback(args: SubmitGradeArgs, topic: string): string {
 }
 
 /**
- * 注册 `submit_grade` 工具，仅在批改态可见。
+ * 注册 `submit_grade` 工具，仅在批改态可执行。
  * @param ctx - Cordis 上下文。
  * @param store - 会话状态表。
  * @param config - 插件配置。

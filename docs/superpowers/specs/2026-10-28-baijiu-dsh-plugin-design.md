@@ -34,7 +34,7 @@
 | 入口形态 | 斜杠命令 + 模型工具双入口 | 对应原版"按钮 + 输入框" |
 | 上下文策略 | 只注入摘要，压缩交给 harness | 避免与 `dsh-compaction` 双轨冲突 |
 | 实现路线 | 结构化工件（schema 承载题目/批改） | 从构造上杜绝答案泄漏，替代正则擦除 |
-| 状态闸门 | 工具始终注册，`execute` 内校验阶段 | 发布版 `dsh-tools` 无条件注册 `{ when }`；`restrict` 需按 agent 维护限制，生命周期成本高于收益 |
+| 状态闸门 | 工具始终注册，`execute` 内校验阶段 | 发布版 `dsh-tools` 不支持条件注册 `{ when }`；`restrict` 需按 agent 维护限制，生命周期成本高于收益 |
 | 状态维度 | 按 `sessionId` | Agent 会随 resume/fork 重建，学生进度不应丢 |
 | 状态持久化 | 进程内 Map + LRU | 与原版刷新即丢的语义一致；持久化留作后续增强 |
 | 消息改写 | 不做 | 保持"模型可见 ⟺ 日志可重建"与用户原话一致 |
@@ -96,7 +96,7 @@ interface LearningState {
 
 阶段语义：
 
-| Phase | 含义 | 可见工具 |
+| Phase | 含义 | 可调用工具 |
 |---|---|---|
 | `explain` | 讲解中 | 无 |
 | `qa` | 答疑中 | 无 |
@@ -224,7 +224,7 @@ interface LearningState {
           → 校验 -> 落库 quiz -> 卡片展示 -> concludeTurn
   → 用户回答 "1A 2B 3C"
       → pre-step: phase=quiz 且有题目且收到用户消息 → phase=grade
-      → 模型据 system 段调用 submit_grade（此时唯一可见工具）
+      → 模型据 system 段调用 submit_grade（此时唯一可调用的工具）
           → 落库 score/weakPoint -> phase=remedial
           → exec.deferContext("请针对「高温堆积发酵」重新讲解…")
               → 同一回合下一步：模型补讲 -> pre-step: phase=explain
@@ -279,7 +279,9 @@ dsh web
 
 ### 早期验证（第一步）
 
-安装 CLI 后立即确认 rc.2 的 `dsh-tools` 提供 `ctx.tools.register(def, { when })` 与 `ToolExecution.concludeTurn()`。任一缺失则退到"本地 checkout `pnpm install` 后从源码启动"。
+安装 CLI 后立即确认 rc.2 的 `dsh-tools` 提供 `ToolExecution.concludeTurn()` 与 `ctx.tools.restrict(`（与实现计划 Task 1 的 Step 4 对齐）。
+
+**发布版不支持条件注册 `{ when }`，本设计不依赖它**——两个工具始终注册，阶段约束在 `execute` 内强制。
 
 ## 9. 测试策略
 
