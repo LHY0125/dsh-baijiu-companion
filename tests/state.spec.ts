@@ -91,4 +91,27 @@ describe('状态迁移', () => {
   it('提醒计数可累加', () => {
     expect(bumpReminder(activate('酱香工艺')).reminderAttempts).toBe(1)
   })
+
+  it('弱点上限为非正数时不保留任何弱点', () => {
+    const quizState = noteQuiz(activate('酱香工艺'), sampleQuiz)
+    expect(noteGrade(quizState, '高温堆积发酵', 0).weakPoints).toEqual([])
+    expect(noteGrade(quizState, '高温堆积发酵', -3).weakPoints).toEqual([])
+  })
+
+  it('无迁移时返回原引用，调用方可据此跳过写入', () => {
+    const state = activate('酱香工艺')
+    expect(finishRemedial(state)).toBe(state)
+  })
+
+  it('未识别出弱点时复用原弱点数组引用', () => {
+    const quizState = noteQuiz(activate('酱香工艺'), sampleQuiz)
+    expect(noteGrade(quizState, '  ', 5).weakPoints).toBe(quizState.weakPoints)
+  })
+
+  it('迁移不修改传入的原状态', () => {
+    const before = activate('酱香工艺')
+    const after = noteUserMessage(before, '为什么叫酱香')
+    expect(before.phase).toBe('explain')
+    expect(before.summary).not.toBe(after.summary)
+  })
 })

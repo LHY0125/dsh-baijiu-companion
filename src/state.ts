@@ -15,7 +15,7 @@ export interface Quiz {
   readonly questions: readonly QuizQuestion[]
 }
 
-/** 一个会话的全部教学状态，只读，迁移必须返回新对象。 */
+/** 一个会话的全部教学状态，只读；发生迁移时返回新对象，无迁移时返回原引用，调用方可据此跳过写入。 */
 export interface LearningState {
   readonly phase: Phase
   readonly topic: string
@@ -74,7 +74,7 @@ export function noteQuiz(state: LearningState, quiz: Quiz): LearningState {
  * 记录批改结果并进入补学态。
  * @param state - 当前状态。
  * @param weakPoint - 模型给出的薄弱点，空串表示未识别出。
- * @param maxWeakPoints - 弱点列表上限。
+ * @param maxWeakPoints - 弱点列表上限；非正数表示不保留任何弱点。
  * @returns 补学态的新状态。
  */
 export function noteGrade(
@@ -83,8 +83,9 @@ export function noteGrade(
   maxWeakPoints: number,
 ): LearningState {
   const point = weakPoint.trim()
-  const weakPoints = point
-    ? [...state.weakPoints, point].slice(-maxWeakPoints)
+  const limit = Math.max(0, Math.trunc(maxWeakPoints))
+  const weakPoints = point && limit > 0
+    ? [...state.weakPoints, point].slice(-limit)
     : state.weakPoints
   const summary = point
     ? `学生刚完成一次「${state.topic}」测验，暴露的薄弱点是「${point}」。`
