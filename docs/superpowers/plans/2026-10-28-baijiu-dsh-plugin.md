@@ -15,6 +15,7 @@
 - 包名 `dsh-baijiu-companion`，`"type": "module"`，`main: "./lib/index.js"`。
 - `engines.dsh` 必须是 `>=0.2.1-rc.2 <0.3.0`。
 - **工具可见性：两个工具始终注册。** 发布版 `dsh-tools` 没有条件注册 `{ when }`（已核实 0.2.1-rc.2 与 rc.3 的类型与运行时代码），因此阶段约束一律在 `execute` 内强制，违规调用抛中文错误。
+- **Agent 身份字段是 `agent.id`（类型 `SessionId`，即 branded string），不是 `agent.sessionId`。** `execute` 的第二个参数是 `ToolRunContext`，其 `agent` 可选；`execute` 必须返回 Promise（用 `async`）。
 - 运行时代码只从 `lib/` 加载；`src/` 不直接进 import 图。
 - 所有可调参数必须是 Schemastery 配置字段，源码内不得出现业务常量（协议常量除外）。
 - 中文注释、中文面向用户文案。
@@ -897,16 +898,16 @@ export function registerSubmitQuiz(ctx: Context, store: SessionStore, config: Co
           { type: 'text', text: `已提交 ${value.questionCount} 道题，主题「${value.topic}」。` },
         ],
       },
-      execute: (args, exec) => {
+      execute: async (args, exec) => {
         const agent = exec.agent
         if (!agent) throw new Error('当前调用没有关联会话')
-        const state = store.get(agent.sessionId)
+        const state = store.get(agent.id)
         if (!state) throw new Error('当前会话没有教学状态，请先用 /learn <主题> 开始学习')
         if (state.phase !== 'quiz' || state.quiz !== null) {
           throw new Error(`当前处于「${state.phase}」阶段，不能提交题目`)
         }
         const questions = validateQuiz(args, config)
-        store.set(agent.sessionId, noteQuiz(state, { topic: state.topic, questions }))
+        store.set(agent.id, noteQuiz(state, { topic: state.topic, questions }))
         exec.concludeTurn()
         return { topic: state.topic, questionCount: questions.length }
       },
@@ -1134,9 +1135,9 @@ export function registerSubmitGrade(ctx: Context, store: SessionStore, config: C
           { type: 'text', text: `已批改：${value.score} / ${value.total}。` },
         ],
       },
-      execute: (args, exec) => {
+      execute: async (args, exec) => {
         if (!exec.agent) throw new Error('当前调用没有关联会话')
-        const sessionId = exec.agent.sessionId
+        const sessionId = exec.agent.id
         const state = store.get(sessionId)
         if (!state) throw new Error('当前会话没有教学状态，请先用 /learn <主题> 开始学习')
         if (state.phase !== 'grade' || !state.quiz) {
@@ -1221,7 +1222,7 @@ export function registerCommands(ctx: Context, store: SessionStore, config: Conf
     input: { hint: '主题名，例如：酱香工艺' },
     handler: ({ agent, rawInput }) => {
       const topic = rawInput.trim() || config.defaultTopic
-      store.set(agent.sessionId, activate(topic))
+      store.set(agent.id, activate(topic))
       sendToAgent(agent, `请开始讲解「${topic}」。`)
       return { kind: 'success', text: `已切换到主题「${topic}」，老师傅开始讲解。` }
     },
@@ -1231,11 +1232,11 @@ export function registerCommands(ctx: Context, store: SessionStore, config: Conf
     name: 'quiz',
     description: '进入测验：出 3 道单选题',
     handler: ({ agent }) => {
-      const state = store.get(agent.sessionId)
+      const state = store.get(agent.id)
       if (!state) {
         return { kind: 'error', text: '尚未选择主题，请先用 /learn <主题> 开始学习。' }
       }
-      store.set(agent.sessionId, { ...state, phase: 'quiz', quiz: null, focus: '' })
+      store.set(agent.id, { ...state, phase: 'quiz', quiz: null, focus: '' })
       sendToAgent(
         agent,
         `请针对「${state.topic}」出 ${config.questionCount} 道单项选择题，只给题目和选项，然后用 submit_quiz 工具提交。`,
@@ -1248,7 +1249,7 @@ export function registerCommands(ctx: Context, store: SessionStore, config: Conf
     name: 'status',
     description: '查看当前学习状态',
     handler: ({ agent }) => {
-      const state = store.get(agent.sessionId)
+      const state = store.get(agent.id)
       if (!state) return { kind: 'success', text: '尚未开始学习。用 /learn <主题> 开始。' }
       const lines = [
         `阶段：${state.phase}`,
@@ -1265,7 +1266,7 @@ export function registerCommands(ctx: Context, store: SessionStore, config: Conf
     name: 'reset',
     description: '清空当前会话的学习进度',
     handler: ({ agent }) => {
-      store.delete(agent.sessionId)
+      store.delete(agent.id)
       return { kind: 'success', text: '学习进度已清空。' }
     },
   })
@@ -1349,7 +1350,7 @@ export function registerPrompt(ctx: Context, store: SessionStore, config: Config
     text: context => {
       const agent = context.agent
       if (!agent) return ''
-      const state = store.get(agent.sessionId)
+      const state = store.get(agent.id)
       return state ? renderStateBlock(state, config) : ''
     },
   })
@@ -1411,7 +1412,7 @@ function textOf(message: { content: readonly { type: string; text?: string }[] }
  */
 export function registerRouter(ctx: Context, store: SessionStore): void {
   ctx.on('agent/pre-step', async (payload, next) => {
-    const sessionId = payload.agent.sessionId
+    const sessionId = payload.agent.id
     const state = store.get(sessionId)
     if (state) {
       const human = payload.messages.find(message => {
