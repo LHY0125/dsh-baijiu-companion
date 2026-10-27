@@ -1569,23 +1569,14 @@ export function apply(ctx: Context, config: Config): void {
 }
 ```
 
-- [ ] **Step 2: 补全 `cordis.patch.yml` 默认配置**
+- [ ] **Step 2: 补全 `cordis.patch.yml` 插件插入行**
+
+默认值由 schema 单点持有，patch 只负责插入插件行。
 
 ```yaml
 - insert:
     - id: baijiu-companion
       name: dsh-baijiu-companion
-      config:
-        topics:
-          - 酱香工艺
-          - 浓香品鉴
-          - 白酒文化
-        defaultTopic: 白酒基础知识
-        questionCount: 3
-        optionsPerQuestion: 4
-        maxWeakPoints: 5
-        maxSessions: 200
-        reminderMaxAttempts: 1
 ```
 
 - [ ] **Step 3: 写 `README.md`**
