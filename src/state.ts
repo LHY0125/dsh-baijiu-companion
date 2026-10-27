@@ -74,7 +74,7 @@ export function noteQuiz(state: LearningState, quiz: Quiz): LearningState {
  * 记录批改结果并进入补学态。
  * @param state - 当前状态。
  * @param weakPoint - 模型给出的薄弱点，空串表示未识别出。
- * @param maxWeakPoints - 弱点列表上限；非正数表示不保留任何弱点。
+ * @param maxWeakPoints - 弱点列表上限；非正数表示本次不新增弱点，既有弱点保持不变。
  * @returns 补学态的新状态。
  */
 export function noteGrade(

@@ -98,12 +98,12 @@ describe('状态迁移', () => {
     expect(noteGrade(quizState, '高温堆积发酵', -3).weakPoints).toEqual([])
   })
 
-  it('无迁移时返回原引用，调用方可据此跳过写入', () => {
+  it('补学之外调用 finishRemedial 返回原引用', () => {
     const state = activate('酱香工艺')
     expect(finishRemedial(state)).toBe(state)
   })
 
-  it('未识别出弱点时复用原弱点数组引用', () => {
+  it('空弱点时复用原弱点数组引用', () => {
     const quizState = noteQuiz(activate('酱香工艺'), sampleQuiz)
     expect(noteGrade(quizState, '  ', 5).weakPoints).toBe(quizState.weakPoints)
   })
