@@ -20,4 +20,8 @@ describe('Config schema', () => {
   it('选项数小于 2 时配置校验失败', () => {
     expect(() => Config({ optionsPerQuestion: 1 })).toThrow()
   })
+
+  it('弱点上限为 0 时配置校验失败', () => {
+    expect(() => Config({ maxWeakPoints: 0 })).toThrow()
+  })
 })
