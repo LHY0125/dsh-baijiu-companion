@@ -44,8 +44,8 @@
 ```
 baijiu-dsh-plugin/
 ├── package.json           # name: dsh-baijiu-companion, dsh.bundle 清单
-├── cordis.patch.yml       # 插入一行 plugin 行 + 默认配置
-├── tsconfig.json          # types 指向本地 checkout 源码
+├── cordis.patch.yml       # 只声明插入插件行，默认值由 schema 单点持有
+├── tsconfig.json          # 编译 src/ 到 lib/，类型来自 registry 包
 ├── tsdown.config.ts
 ├── README.md
 ├── src/
@@ -233,7 +233,7 @@ interface LearningState {
 
 ## 7. 配置
 
-Schemastery schema，全部字段可在 `cordis.patch.yml` 覆盖：
+Schemastery schema，默认值由 schema 单点持有，`cordis.patch.yml` 只声明插入插件行：
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
@@ -266,8 +266,8 @@ Schemastery schema，全部字段可在 `cordis.patch.yml` 覆盖：
 ### 构建
 
 - TypeScript，用 `tsc` 直接编译到 `lib/`（小包无需打包器；比 tsdown 少一层配置）
-- 类型检查对着本地 checkout 的 `src`（`tsconfig.paths`），因为本地源码 rc.3 领先于 npm rc.2
-- devDependencies 使用 npm 已发布的 `0.0.1-rc.1` 系列包
+- 类型检查直接使用 registry 安装的 `@deepseek-ai/*` 类型声明（`tsconfig.json` 无 `paths` 映射）
+- devDependencies 使用 registry 上已发布的 `0.2.1-rc.2` 系列包（`@deepseek-ai/cordis` 为 `4.0.5`，`@deepseek-ai/schemastery` 为 `3.18.5`）
 
 ### 安装与启动
 

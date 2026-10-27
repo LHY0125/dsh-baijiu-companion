@@ -70,8 +70,8 @@ git init
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.5",
-    "@deepseek-ai/dsh-llm": "0.0.1-rc.1",
-    "@deepseek-ai/dsh-tools": "0.0.1-rc.1",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
     "@deepseek-ai/schemastery": "3.18.5",
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0",
@@ -545,12 +545,12 @@ export interface Config {
 /** 配置校验 schema，非法配置在插件加载时直接失败。 */
 export const Config: Schema<Config> = Schema.object({
   topics: Schema.array(String).default(['酱香工艺', '浓香品鉴', '白酒文化']),
-  defaultTopic: Schema.string().default('白酒基础知识'),
+  defaultTopic: Schema.string().min(1).default('白酒基础知识'),
   questionCount: Schema.number().min(1).max(10).step(1).default(3),
   optionsPerQuestion: Schema.number().min(2).max(6).step(1).default(4),
-  maxWeakPoints: Schema.number().min(1).default(5),
-  maxSessions: Schema.number().min(1).default(200),
-  reminderMaxAttempts: Schema.number().min(0).default(1),
+  maxWeakPoints: Schema.number().min(1).step(1).default(5),
+  maxSessions: Schema.number().min(1).step(1).default(200),
+  reminderMaxAttempts: Schema.number().min(0).step(1).default(1),
 })
 ```
 
