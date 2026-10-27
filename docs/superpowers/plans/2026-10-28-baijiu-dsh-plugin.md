@@ -13,7 +13,8 @@
 ## Global Constraints
 
 - 包名 `dsh-baijiu-companion`，`"type": "module"`，`main: "./lib/index.js"`。
-- `engines.dsh` 必须是 `>=0.2.1-rc.2 <0.3.0`（条件工具 `when` 自 rc.2 起提供）。
+- `engines.dsh` 必须是 `>=0.2.1-rc.2 <0.3.0`。
+- **工具可见性：两个工具始终注册。** 发布版 `dsh-tools` 没有条件注册 `{ when }`（已核实 0.2.1-rc.2 与 rc.3 的类型与运行时代码），因此阶段约束一律在 `execute` 内强制，违规调用抛中文错误。
 - 运行时代码只从 `lib/` 加载；`src/` 不直接进 import 图。
 - 所有可调参数必须是 Schemastery 配置字段，源码内不得出现业务常量（协议常量除外）。
 - 中文注释、中文面向用户文案。
@@ -160,11 +161,12 @@ pnpm run build
 npm i -g @deepseek-ai/dsh@0.2.1-rc.2
 dsh --version
 $root = npm root -g
-Select-String -Path "$root\@deepseek-ai\dsh-tools\lib\**\*.d.ts" -Pattern "concludeTurn|when\?" -List
+$tools = Get-ChildItem -Recurse -Filter index.d.ts "$root\@deepseek-ai\dsh\node_modules\@deepseek-ai\dsh-tools\lib" | Select-Object -First 1
+Select-String -Path $tools.FullName -Pattern "concludeTurn|restrict\(" -List
 ```
 
-预期：两条模式都能命中。
-**若任一模式未命中**：停止本计划，改为在 `deepseek-harness` 仓库执行 `pnpm install`，后续所有 `dsh` 命令替换为 `pnpm dsh`，并把 devDependencies 改为 `workspace:*` 链到本地包。
+预期：两条模式都能命中（`concludeTurn` 供工具收尾；`restrict` 是本计划暂不使用的备选闸门）。
+**不要**再查找 `when?`——已核实发布版没有该 API，本计划不依赖它。
 
 - [ ] **Step 6: 安装插件到 profile 并确认补丁层生效**
 
@@ -896,20 +898,19 @@ export function registerSubmitQuiz(ctx: Context, store: SessionStore, config: Co
         ],
       },
       execute: (args, exec) => {
-        const state = exec.agent ? store.get(exec.agent.sessionId) : undefined
-        if (!state) throw new Error('当前会话没有教学状态')
+        const agent = exec.agent
+        if (!agent) throw new Error('当前调用没有关联会话')
+        const state = store.get(agent.sessionId)
+        if (!state) throw new Error('当前会话没有教学状态，请先用 /learn <主题> 开始学习')
+        if (state.phase !== 'quiz' || state.quiz !== null) {
+          throw new Error(`当前处于「${state.phase}」阶段，不能提交题目`)
+        }
         const questions = validateQuiz(args, config)
-        store.set(exec.agent!.sessionId, noteQuiz(state, { topic: state.topic, questions }))
+        store.set(agent.sessionId, noteQuiz(state, { topic: state.topic, questions }))
         exec.concludeTurn()
         return { topic: state.topic, questionCount: questions.length }
       },
     }),
-    {
-      when: ({ agent }) => {
-        const state = store.get(agent.sessionId)
-        return state?.phase === 'quiz' && state.quiz === null
-      },
-    },
   )
 }
 ```
@@ -1137,7 +1138,10 @@ export function registerSubmitGrade(ctx: Context, store: SessionStore, config: C
         if (!exec.agent) throw new Error('当前调用没有关联会话')
         const sessionId = exec.agent.sessionId
         const state = store.get(sessionId)
-        if (!state || !state.quiz) throw new Error('当前会话没有待批改的测验')
+        if (!state) throw new Error('当前会话没有教学状态，请先用 /learn <主题> 开始学习')
+        if (state.phase !== 'grade' || !state.quiz) {
+          throw new Error(`当前处于「${state.phase}」阶段，没有待批改的答卷`)
+        }
 
         const graded = validateGrade(args, state.quiz.questions.length)
         store.set(sessionId, noteGrade(state, graded.weakPoint, config.maxWeakPoints))
@@ -1152,12 +1156,6 @@ export function registerSubmitGrade(ctx: Context, store: SessionStore, config: C
         return { score: graded.score, total: graded.total, weakPoint: graded.weakPoint }
       },
     }),
-    {
-      when: ({ agent }) => {
-        const state = store.get(agent.sessionId)
-        return state?.phase === 'grade' && state.quiz !== null
-      },
-    },
   )
 }
 ```

@@ -34,6 +34,7 @@
 | 入口形态 | 斜杠命令 + 模型工具双入口 | 对应原版"按钮 + 输入框" |
 | 上下文策略 | 只注入摘要，压缩交给 harness | 避免与 `dsh-compaction` 双轨冲突 |
 | 实现路线 | 结构化工件（schema 承载题目/批改） | 从构造上杜绝答案泄漏，替代正则擦除 |
+| 状态闸门 | 工具始终注册，`execute` 内校验阶段 | 发布版 `dsh-tools` 无条件注册 `{ when }`；`restrict` 需按 agent 维护限制，生命周期成本高于收益 |
 | 状态维度 | 按 `sessionId` | Agent 会随 resume/fork 重建，学生进度不应丢 |
 | 状态持久化 | 进程内 Map + LRU | 与原版刷新即丢的语义一致；持久化留作后续增强 |
 | 消息改写 | 不做 | 保持"模型可见 ⟺ 日志可重建"与用户原话一致 |
@@ -118,7 +119,9 @@ interface LearningState {
 
 ### 5.2 工具 `submit_quiz`
 
-仅在 `phase === 'quiz' && quiz === null` 时可见（`ctx.tools.register(def, { when })`）。
+两个工具**始终注册**（发布版不支持条件注册），阶段约束在 `execute` 内强制：调用时机不符时抛出带中文说明的错误，模型据此自我纠正。原"模型看不见越权工具"的强主张降级为"调用了也会被代码拒绝"。
+
+仅在 `phase === 'quiz' && quiz === null` 时可执行。
 
 参数 schema：
 
@@ -149,7 +152,7 @@ interface LearningState {
 
 ### 5.3 工具 `submit_grade`
 
-仅在 `phase === 'grade'` 时可见。
+仅在 `phase === 'grade'` 时可执行。
 
 参数 schema：
 
