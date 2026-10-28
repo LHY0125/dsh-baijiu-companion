@@ -1,12 +1,34 @@
 import type { Context } from '@deepseek-ai/cordis'
+import { registerCommands } from './commands.js'
+import { Config } from './config.js'
+import { registerPrompt } from './prompt.js'
+import { registerReminder } from './reminder.js'
+import { registerRouter } from './router.js'
+import './source.js'
+import { SessionStore } from './store.js'
+import { registerSubmitGrade } from './tools/submit-grade.js'
+import { registerSubmitQuiz } from './tools/submit-quiz.js'
 
-/** 插件名，Cordis 加载时用于识别。 */
+export { Config }
+export type { Config as ConfigShape } from './config.js'
+
+/** 插件名。 */
 export const name = 'baijiu-companion'
 
+/** 依赖的服务：工具、命令、系统提示、Agent 注册表、会话存储。 */
+export const inject = ['tools', 'commands', 'systemPrompt', 'agents', 'sessions']
+
 /**
- * 插件入口。Task 11 会把各模块装配到这里。
+ * 插件入口。
  * @param ctx - Cordis 上下文。
+ * @param config - 已校验的插件配置。
  */
-export function apply(ctx: Context): void {
-  void ctx
+export function apply(ctx: Context, config: Config): void {
+  const store = new SessionStore(config.maxSessions)
+  registerSubmitQuiz(ctx, store, config)
+  registerSubmitGrade(ctx, store, config)
+  registerCommands(ctx, store, config)
+  registerPrompt(ctx, store, config)
+  registerRouter(ctx, store)
+  registerReminder(ctx, store, config)
 }
