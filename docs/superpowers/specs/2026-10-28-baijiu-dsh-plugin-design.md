@@ -208,6 +208,8 @@ interface LearningState {
 - `phase === 'quiz'` 且已有题目且收到非空用户消息（学生提交作答）→ `phase = 'grade'`
 - `phase === 'remedial'` 且回合结束 → `phase = 'explain'`
 
+消息来源采用**白名单**：只有 `source.kind === 'user'` 的消息才算学生发言，同一批认领多条时取最后一条。`MessageSourceMap` 是可合并扩展的，宿主还会以 user 角色注入 `user-approval`、`skill-invocation`、`goal`、`schedule`、`webhook` 等消息；若改用"排除本插件 `baijiu`"的黑名单，这些注入会被误当成学生发言，导致 `summary` 被顶掉、或在学生未作答时把阶段翻到 `grade`。白名单是 fail-closed：上游若改名，教学迁移会响亮失效而不是静默错乱。
+
 不改写消息的理由：DSH 要求"模型可见的内容必须能从会话日志重建"；改写用户原话会让日志与用户实际输入不一致。指令一律走 system 段。
 
 ### 5.6 退化路径

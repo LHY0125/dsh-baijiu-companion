@@ -1789,14 +1789,14 @@ git commit -m "feat: 按阶段渲染的动态 system 提示段"
 - Create: `src/router.ts`
 
 **Interfaces:**
-- Consumes: `SessionStore`、`noteUserMessage`、`finishRemedial`、`BAIJIU_SOURCE`
+- Consumes: `SessionStore`、`noteUserMessage`、`finishRemedial`
 - Produces: `registerRouter(ctx: Context, store: SessionStore): void`
 
 - [ ] **Step 1: 实现 `src/router.ts`**
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
-import { BAIJIU_SOURCE } from './source.js'
+import type {} from '@deepseek-ai/dsh-agent'
 import { finishRemedial, noteUserMessage } from './state.js'
 import type { SessionStore } from './store.js'
 
@@ -1815,7 +1815,9 @@ function textOf(message: { content: readonly { type: string; text?: string }[] }
 
 /**
  * 注册状态迁移：pre-step 处理讲解→答疑、出题→批改；turn/end 处理补学→讲解。
- * 插件自己投递的消息（source.kind === 'baijiu'）不触发迁移。
+ * 消息来源用白名单：只认 source.kind === 'user'。MessageSourceMap 可被宿主合并扩展出
+ * user-approval、skill-invocation、goal 等注入型 user 消息，白名单能让上游改名时
+ * 迁移响亮失效，而不是把这些注入文本误当成学生发言。
  * @param ctx - Cordis 上下文。
  * @param store - 会话状态表。
  */
@@ -1824,10 +1826,13 @@ export function registerRouter(ctx: Context, store: SessionStore): void {
     const sessionId = payload.agent.id
     const state = store.get(sessionId)
     if (state) {
-      const human = payload.messages.find(message => {
-        const source = (message as { source?: { kind?: string } }).source
-        return source?.kind !== BAIJIU_SOURCE.kind && textOf(message) !== ''
-      })
+      // 同一批可能认领多条消息，取最后一条非空人类消息作为学生发言。
+      const human = payload.messages
+        .filter(message => {
+          const source = (message as { source?: { kind?: string } }).source
+          return source?.kind === 'user' && textOf(message) !== ''
+        })
+        .at(-1)
       if (human) store.set(sessionId, noteUserMessage(state, textOf(human)))
     }
     return next()
@@ -2040,4 +2045,4 @@ git commit -m "feat: 装配插件并补全文档与默认配置"
 
 - **Spec 覆盖**：状态模型↔Task 2；配置↔Task 3；LRU↔Task 4；submit_quiz↔Task 5；submit_grade 与补学投递↔Task 6；命令↔Task 7；动态提示段↔Task 8；pre-step 路由↔Task 9；退化提醒↔Task 10；装配与验证↔Task 11；早期 API 验证↔Task 1 Step 5。
 - **占位符扫描**：无 TBD/TODO；每个代码步骤都给出可粘贴的实现。
-- **类型一致性**：`LearningState.reminderAttempts` 在 Task 2 定义、Task 10 消费；`validateQuiz`/`validateGrade` 的返回类型在测试与注册处一致；`BAIJIU_SOURCE.kind` 在 Task 6 定义、Task 9 消费。
+- **类型一致性**：`LearningState.reminderAttempts` 在 Task 2 定义、Task 10 消费；`validateQuiz`/`validateGrade` 的返回类型在测试与注册处一致；`BAIJIU_SOURCE` 在 Task 6 定义、Task 10 消费（Task 9 改用 `source.kind === 'user'` 白名单，不再依赖它）。
