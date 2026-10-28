@@ -280,9 +280,17 @@ Schemastery schema，默认值由 schema 单点持有，`cordis.patch.yml` 只�
 
 ```powershell
 npm i -g @deepseek-ai/dsh@0.2.1-rc.2
+
+# 从 GitHub 安装（推荐）
+dsh plugin --profile web add github:LHY0125/dsh-baijiu-companion
+
+# 或从本地检出安装（需先 pnpm run build；link 安装不执行 prepare）
 dsh plugin --profile web add <本包路径>
+
 dsh web
 ```
+
+git 安装会拉取源码而非构建产物，`prepare` 脚本负责编译 `lib/`；pnpm 默认拒绝执行它，需在 profile 的 `pnpm-workspace.yaml` 中按 pnpm 打印的完整键（含 tarball 地址与 commit 哈希）放行后重试。该路径已于 2026-10-28 实测通过：`prepare` 生成 `lib/`、配置层正常注册。
 
 ### 早期验证（第一步）
 

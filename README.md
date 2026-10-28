@@ -4,8 +4,34 @@
 
 ## 安装
 
+### 从 GitHub 安装
+
 ```powershell
+dsh plugin --profile web add github:LHY0125/dsh-baijiu-companion
+```
+
+若 pnpm 拒绝执行构建脚本，它会打印一行**完整键**（含解析后的 tarball 地址）。把那一行原样加进**该 profile 的** `pnpm-workspace.yaml`（通常位于 `$DSH_HOME/profiles/web/pnpm-workspace.yaml`），再执行一次上面的命令：
+
+```yaml
+allowBuilds:
+  "dsh-baijiu-companion@https://codeload.github.com/LHY0125/dsh-baijiu-companion/tar.gz/<commit>": true
+```
+
+> 键里带 commit 哈希，仓库更新后需按 pnpm 新打印的键替换。放行 `prepare` 等于允许该包在安装时于你的机器上执行构建脚本，只对信任的源这么做。要固定版本可写 `github:LHY0125/dsh-baijiu-companion#<commit>`。
+
+### 从本地检出安装（开发用）
+
+本地 `link:` 安装**不会**执行 `prepare`，所以要先自行构建：
+
+```powershell
+pnpm install
+pnpm run build
 dsh plugin --profile web add "D:\Code\doing_exercises\programs\比赛项目\baijiu-dsh-plugin"
+```
+
+### 启动
+
+```powershell
 dsh web
 ```
 
