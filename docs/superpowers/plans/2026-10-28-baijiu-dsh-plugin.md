@@ -1440,7 +1440,7 @@ export function registerCommands(ctx: Context, store: SessionStore, config: Conf
       store.set(agent.id, enterQuiz(state))
       sendToAgent(
         agent,
-        `请针对「${state.topic}」出 ${config.questionCount} 道单项选择题，只给题干和选项，绝不要输出答案，然后用 submit_quiz 工具提交，不要在回复正文里复述题目。`,
+        `请针对「${state.topic}」出 ${config.questionCount} 道单项选择题，只给题干和选项，绝不要输出答案，然后用 submit_quiz 工具提交；提交后在回复里用 Markdown 列出同样的题目（不含答案），并提示按 1A 2B 3C 作答。`,
       )
       return { kind: 'success', text: '已进入出题模式。' }
     },
@@ -1518,7 +1518,7 @@ import type { SessionStore } from './store.js'
 const PHASE_INSTRUCTIONS: Record<Phase, string> = {
   explain: '请用通俗易懂的语言讲解当前主题，包含核心工艺或特点，400 字以内，最后提出一个启发性问题。',
   qa: '请基于之前的讲解解答学生的疑问，语气亲切，300 字以内。',
-  quiz: '请根据当前主题出题，只给题干和选项，绝不要输出答案，然后用 submit_quiz 工具提交，不要在回复正文里复述题目。',
+  quiz: '请根据当前主题出题，只给题干和选项，绝不要输出答案，然后用 submit_quiz 工具提交。提交后，在回复正文里用 Markdown 把同样的题目完整列出来（不含答案），最后提示学生按 1A 2B 3C 的格式作答。',
   grade: '学生已提交答案。请对照题目判定对错，并用 submit_grade 工具提交得分、错题解析与一个薄弱知识点。',
   remedial: '学生刚暴露了薄弱点。请针对该薄弱点重新讲解，讲得比上次更细。',
 }

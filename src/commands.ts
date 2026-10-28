@@ -56,7 +56,7 @@ export function registerCommands(ctx: Context, store: SessionStore, config: Conf
       store.set(agent.id, enterQuiz(state))
       sendToAgent(
         agent,
-        `请针对「${state.topic}」出 ${config.questionCount} 道单项选择题，只给题干和选项，绝不要输出答案，然后用 submit_quiz 工具提交，不要在回复正文里复述题目。`,
+        `请针对「${state.topic}」出 ${config.questionCount} 道单项选择题，只给题干和选项，绝不要输出答案，然后用 submit_quiz 工具提交；提交后在回复里用 Markdown 列出同样的题目（不含答案），并提示按 1A 2B 3C 作答。`,
       )
       return { kind: 'success', text: '已进入出题模式。' }
     },

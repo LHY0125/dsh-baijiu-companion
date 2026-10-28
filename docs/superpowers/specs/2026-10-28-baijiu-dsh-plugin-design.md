@@ -148,7 +148,7 @@ interface LearningState {
 
 输出 canonical value：`{ topic, questions }`；`output.render` 渲染为给用户看的题目文本，末行附作答格式提示。
 
-**不调用 `exec.concludeTurn()`。** 实测：结束回合会让该回合没有助手消息，客户端因此不渲染工具行，题目卡片被折叠成 0 高度、学生看不到。让模型回一句"按 1A 2B 3C 作答"的提示即可，system 指令已要求它不要复述题目。
+**不调用 `exec.concludeTurn()`。** 实测：结束回合会让该回合没有助手消息，客户端因此不渲染工具行，题目卡片被折叠成 0 高度、学生看不到。改为让模型在回复正文里用 Markdown 列出同样的题目并提示作答——工具行仍默认折叠在「已调用工具」里，正文才是学生实际看到的内容。
 
 ### 5.3 工具 `submit_grade`
 
