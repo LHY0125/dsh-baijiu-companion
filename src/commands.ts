@@ -18,6 +18,15 @@ function sendToAgent(agent: { followup(message: ReturnType<typeof createUserMess
 }
 
 /**
+ * 生成预设主题提示；未配置任何主题时返回空串，避免出现空的「可选主题：」。
+ * @param config - 插件配置。
+ * @returns 可直接拼接进提示语的文本。
+ */
+export function topicsHint(config: Config): string {
+  return config.topics.length > 0 ? `可选主题：${config.topics.join(' / ')}。` : ''
+}
+
+/**
  * 注册四个教学命令。
  * @param ctx - Cordis 上下文。
  * @param store - 会话状态表。
@@ -42,7 +51,7 @@ export function registerCommands(ctx: Context, store: SessionStore, config: Conf
     handler: ({ agent }) => {
       const state = store.get(agent.id)
       if (!state) {
-        return { kind: 'error', text: '尚未选择主题，请先用 /learn <主题> 开始学习。' }
+        return { kind: 'error', text: `尚未选择主题，请先用 /learn <主题> 开始学习。${topicsHint(config)}` }
       }
       store.set(agent.id, enterQuiz(state))
       sendToAgent(
@@ -58,7 +67,7 @@ export function registerCommands(ctx: Context, store: SessionStore, config: Conf
     description: '查看当前学习状态',
     handler: ({ agent }) => {
       const state = store.get(agent.id)
-      if (!state) return { kind: 'success', text: '尚未开始学习。用 /learn <主题> 开始。' }
+      if (!state) return { kind: 'success', text: `尚未开始学习。用 /learn <主题> 开始。${topicsHint(config)}` }
       const lines = [
         `阶段：${PHASE_LABELS[state.phase]}`,
         `主题：${state.topic || config.defaultTopic}`,
