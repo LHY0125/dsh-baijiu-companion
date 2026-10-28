@@ -44,6 +44,16 @@ describe('validateGrade', () => {
       validateGrade({ ...ok, score: 2, wrong: [{ index: 9, explanation: 'x' }] }, 3),
     ).toThrow(/序号/)
   })
+
+  it('错题数与得分不符时抛错', () => {
+    expect(() => validateGrade({ ...ok, score: 2, wrong: [] }, 3)).toThrow(/错题数/)
+  })
+
+  it('解析为空时抛错', () => {
+    expect(() =>
+      validateGrade({ ...ok, wrong: [{ index: 2, explanation: '   ' }] }, 3),
+    ).toThrow(/解析为空/)
+  })
 })
 
 describe('formatFeedback', () => {
@@ -58,6 +68,30 @@ describe('formatFeedback', () => {
   it('无错题时不渲染错题段落', () => {
     const text = formatFeedback({ score: 3, total: 3, wrong: [], weakPoint: '' }, '酱香工艺')
     expect(text).not.toContain('错题解析')
+  })
+})
+
+describe('render', () => {
+  it('渲染得分与逐题解析', () => {
+    const definition = captureDefinition(new SessionStore(10))
+    const blocks = definition.output.render(ok, {
+      topic: '酱香工艺',
+      score: 2,
+      total: 3,
+      weakPoint: '高温堆积发酵',
+    })
+    expect(blocks).toHaveLength(1)
+    const text = (blocks[0] as { text: string }).text
+    expect(text).toContain('2 / 3')
+    expect(text).toContain('堆积温度记成了低温')
+    expect(text).toContain('高温堆积发酵')
+  })
+
+  it('旧日志缺 topic 时不渲染出 undefined', () => {
+    const definition = captureDefinition(new SessionStore(10))
+    const blocks = definition.output.render(ok, { score: 2, total: 3, weakPoint: '' })
+    const text = (blocks[0] as { text: string }).text
+    expect(text).not.toContain('undefined')
   })
 })
 
@@ -143,7 +177,12 @@ describe('registerSubmitGrade', () => {
 
     const value = await definition.execute(ok, exec)
 
-    expect(value).toEqual({ score: 2, total: 3, weakPoint: '高温堆积发酵' })
+    expect(value).toEqual({
+      topic: '酱香工艺',
+      score: 2,
+      total: 3,
+      weakPoint: '高温堆积发酵',
+    })
     const state = store.get('s1')
     expect(state?.phase).toBe('remedial')
     expect(state?.quiz).toBeNull()
@@ -166,5 +205,19 @@ describe('registerSubmitGrade', () => {
       content: readonly { type: string; text: string }[]
     }
     expect(message.content[0]?.text).toContain('酱香工艺')
+  })
+
+  it('有薄弱点时投递包含该薄弱点的补学请求，且前后空白不进入文本', async () => {
+    const store = new SessionStore(10)
+    store.set('s1', gradeState())
+    const definition = captureDefinition(store)
+    const { exec, deferContext } = fakeExec('s1')
+
+    await definition.execute({ ...ok, weakPoint: '  高温堆积发酵  ' }, exec)
+
+    const message = deferContext.mock.calls[0]![0] as {
+      content: readonly { type: string; text: string }[]
+    }
+    expect(message.content[0]?.text).toContain('「高温堆积发酵」')
   })
 })

@@ -1209,7 +1209,7 @@ export interface SubmitGradeArgs {
  * @param args - 工具参数。
  * @param expectedTotal - 本卷题目数，来自已保存的测验。
  * @returns 校验通过的批改结果。
- * @throws 得分、题数或错题序号不合法时抛出中文错误。
+ * @throws 得分、题数、错题数、错题序号或解析不合法时抛出中文错误。
  */
 export function validateGrade(args: SubmitGradeArgs, expectedTotal: number): SubmitGradeArgs {
   if (args.total !== expectedTotal) {
@@ -1218,9 +1218,17 @@ export function validateGrade(args: SubmitGradeArgs, expectedTotal: number): Sub
   if (!Number.isInteger(args.score) || args.score < 0 || args.score > args.total) {
     throw new Error(`得分必须是 0 到 ${args.total} 之间的整数，实际 ${args.score}`)
   }
+  if (args.wrong.length !== args.total - args.score) {
+    throw new Error(
+      `错题数与得分不符：得 ${args.score} 分意味着 ${args.total - args.score} 道错题，实际提交 ${args.wrong.length} 条`,
+    )
+  }
   for (const item of args.wrong) {
     if (!Number.isInteger(item.index) || item.index < 1 || item.index > expectedTotal) {
       throw new Error(`错题序号越界：${item.index}`)
+    }
+    if (item.explanation.trim() === '') {
+      throw new Error(`第 ${item.index} 题解析为空`)
     }
   }
   return args
@@ -1284,13 +1292,26 @@ export function registerSubmitGrade(ctx: Context, store: SessionStore, config: C
           type: 'object',
           additionalProperties: false,
           properties: {
+            topic: { type: 'string', required: true },
             score: { type: 'integer', required: true },
             total: { type: 'integer', required: true },
             weakPoint: { type: 'string', required: true },
           },
         },
-        render: (_args, value) => [
-          { type: 'text', text: `已批改：${value.score} / ${value.total}。` },
+        render: (args, value) => [
+          {
+            type: 'text',
+            text: formatFeedback(
+              {
+                score: value.score,
+                total: value.total,
+                wrong: args.wrong,
+                weakPoint: value.weakPoint,
+              },
+              // 旧会话日志回放时 topic 可能缺失，兜底为空串而不是渲染出 undefined。
+              value.topic ?? '',
+            ),
+          },
         ],
       },
       execute: async (args, exec) => {
@@ -1305,14 +1326,21 @@ export function registerSubmitGrade(ctx: Context, store: SessionStore, config: C
         const graded = validateGrade(args, state.quiz.questions.length)
         store.set(sessionId, noteGrade(state, graded.weakPoint, config.maxWeakPoints))
 
-        const ask = graded.weakPoint.trim()
-          ? `请针对学生的薄弱点「${graded.weakPoint}」重新讲解一遍，讲得比上次更细。`
+        // 与 noteGrade 写入 focus 的值保持一致：统一用 trim 后的薄弱点。
+        const point = graded.weakPoint.trim()
+        const ask = point
+          ? `请针对学生的薄弱点「${point}」重新讲解一遍，讲得比上次更细。`
           : `请针对「${state.topic}」的核心要点再梳理一遍，帮助学生巩固。`
         exec.deferContext(
           createUserMessage({ content: [{ type: 'text', text: ask }], source: BAIJIU_SOURCE }),
         )
 
-        return { score: graded.score, total: graded.total, weakPoint: graded.weakPoint }
+        return {
+          topic: state.topic,
+          score: graded.score,
+          total: graded.total,
+          weakPoint: graded.weakPoint,
+        }
       },
     }),
   )
