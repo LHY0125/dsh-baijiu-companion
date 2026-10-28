@@ -30,13 +30,15 @@ export function registerRouter(ctx: Context, store: SessionStore): void {
     const state = store.get(sessionId)
     if (state) {
       // 同一批可能认领多条消息，取最后一条非空人类消息作为学生发言。
-      const human = payload.messages
-        .filter(message => {
-          const source = (message as { source?: { kind?: string } }).source
-          return source?.kind === 'user' && textOf(message) !== ''
-        })
+      const humanText = payload.messages
+        .filter(message => message.source.kind === 'user')
+        .map(message => textOf(message))
+        .filter(text => text !== '')
         .at(-1)
-      if (human) store.set(sessionId, noteUserMessage(state, textOf(human)))
+      if (humanText !== undefined) {
+        const advanced = noteUserMessage(state, humanText)
+        if (advanced !== state) store.set(sessionId, advanced)
+      }
     }
     return next()
   })
@@ -45,7 +47,7 @@ export function registerRouter(ctx: Context, store: SessionStore): void {
     if (event.type !== 'turn/end') return
     const state = store.get(session.id)
     if (!state) return
-    const next = finishRemedial(state)
-    if (next !== state) store.set(session.id, next)
+    const advanced = finishRemedial(state)
+    if (advanced !== state) store.set(session.id, advanced)
   })
 }
