@@ -34,12 +34,13 @@ End-to-end runs need `DEEPSEEK_API_KEY` (or a root `.env`); there is no key chec
 
 The teaching flow is a five-phase machine (`explain → qa → quiz → grade → remedial`) held per session in `SessionStore`, keyed by `agent.id`. Only code moves it:
 
-| Mover | Transition |
-|---|---|
-| `/learn`, `/quiz`, `/reset` commands | enter `explain`, enter `quiz`, delete state |
+
+| Mover                                   | Transition                                                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `/learn`, `/quiz`, `/reset` commands    | enter `explain`, enter `quiz`, delete state                                                    |
 | `agent/pre-step` listener (`router.ts`) | `explain → qa` on a human message; `quiz → grade` once a quiz exists and the student answers |
-| `turn/end` listener (`router.ts`) | `remedial → explain` |
-| tool bodies | `submit_quiz` stores the quiz; `submit_grade` moves to `remedial` |
+| `turn/end` listener (`router.ts`)       | `remedial → explain`                                                                          |
+| tool bodies                             | `submit_quiz` stores the quiz; `submit_grade` moves to `remedial`                              |
 
 The model never writes state directly. Two tools are **always registered**; the phase gate lives inside each `execute` and throws a Chinese error when the phase is wrong.
 
