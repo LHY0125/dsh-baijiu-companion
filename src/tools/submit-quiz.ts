@@ -21,7 +21,7 @@ export interface SubmitQuizArgs {
  * @param args - 工具参数。
  * @param config - 插件配置，提供题数与选项数约束。
  * @returns 校验通过的题目列表。
- * @throws 题目数、选项数或题干不合法时抛出带中文说明的错误。
+ * @throws 题目数、选项数、题干或选项为空时抛出带中文说明的错误。
  */
 export function validateQuiz(args: SubmitQuizArgs, config: Config): QuizQuestion[] {
   if (args.questions.length !== config.questionCount) {
@@ -36,7 +36,14 @@ export function validateQuiz(args: SubmitQuizArgs, config: Config): QuizQuestion
         `第 ${index + 1} 题选项数必须为 ${config.optionsPerQuestion}，实际 ${question.options.length}`,
       )
     }
-    return { stem: question.stem.trim(), options: question.options.map(o => o.trim()) }
+    const options = question.options.map((option, optionIndex) => {
+      const trimmed = option.trim()
+      if (trimmed === '') {
+        throw new Error(`第 ${index + 1} 题第 ${optionIndex + 1} 个选项为空`)
+      }
+      return trimmed
+    })
+    return { stem: question.stem.trim(), options }
   })
 }
 
@@ -50,7 +57,10 @@ export function formatQuiz(topic: string, questions: readonly QuizQuestion[]): s
   const body = questions
     .map((question, index) => {
       const options = question.options
-        .map((option, optionIndex) => `${OPTION_LETTERS[optionIndex]}. ${option}`)
+        .map(
+          (option, optionIndex) =>
+            `${OPTION_LETTERS[optionIndex] ?? String(optionIndex + 1)}. ${option}`,
+        )
         .join('\n')
       return `${index + 1}. ${question.stem}\n${options}`
     })
@@ -95,11 +105,22 @@ export function registerSubmitQuiz(ctx: Context, store: SessionStore, config: Co
           additionalProperties: false,
           properties: {
             topic: { type: 'string', required: true },
-            questionCount: { type: 'integer', required: true },
+            questions: {
+              type: 'array',
+              required: true,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  stem: { type: 'string', required: true },
+                  options: { type: 'array', required: true, items: { type: 'string' } },
+                },
+              },
+            },
           },
         },
         render: (_args, value) => [
-          { type: 'text', text: `已提交 ${value.questionCount} 道题，主题「${value.topic}」。` },
+          { type: 'text', text: formatQuiz(value.topic, value.questions) },
         ],
       },
       execute: async (args, exec) => {
@@ -107,13 +128,22 @@ export function registerSubmitQuiz(ctx: Context, store: SessionStore, config: Co
         if (!agent) throw new Error('当前调用没有关联会话')
         const state = store.get(agent.id)
         if (!state) throw new Error('当前会话没有教学状态，请先用 /learn <主题> 开始学习')
-        if (state.phase !== 'quiz' || state.quiz !== null) {
+        if (state.phase !== 'quiz') {
           throw new Error(`当前处于「${state.phase}」阶段，不能提交题目`)
+        }
+        if (state.quiz !== null) {
+          throw new Error('本次测验的题目已经提交，请等待学生作答')
         }
         const questions = validateQuiz(args, config)
         store.set(agent.id, noteQuiz(state, { topic: state.topic, questions }))
         exec.concludeTurn()
-        return { topic: state.topic, questionCount: questions.length }
+        return {
+          topic: state.topic,
+          questions: questions.map(question => ({
+            stem: question.stem,
+            options: [...question.options],
+          })),
+        }
       },
     }),
   )
