@@ -148,7 +148,7 @@ interface LearningState {
 
 输出 canonical value：`{ topic, questions }`；`output.render` 渲染为给用户看的题目文本，末行附作答格式提示。
 
-成功后调用 `exec.concludeTurn()`，避免模型复述题目。
+**不调用 `exec.concludeTurn()`。** 实测：结束回合会让该回合没有助手消息，客户端因此不渲染工具行，题目卡片被折叠成 0 高度、学生看不到。让模型回一句"按 1A 2B 3C 作答"的提示即可，system 指令已要求它不要复述题目。
 
 ### 5.3 工具 `submit_grade`
 
@@ -228,7 +228,7 @@ interface LearningState {
 /quiz
   → phase=quiz，followup("请出题并调用 submit_quiz")
       → 模型调用 submit_quiz
-          → 校验 -> 落库 quiz -> 卡片展示 -> concludeTurn
+          → 校验 -> 落库 quiz -> 卡片展示（不结束回合）
   → 用户回答 "1A 2B 3C"
       → pre-step: phase=quiz 且有题目且收到用户消息 → phase=grade
       → 模型据 system 段调用 submit_grade（此时唯一可调用的工具）

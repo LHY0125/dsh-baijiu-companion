@@ -174,6 +174,7 @@ describe('registerSubmitQuiz', () => {
 
     expect(value).toEqual({ topic: '酱香工艺', questions: args.questions })
     expect(store.get('s1')?.quiz?.questions).toHaveLength(2)
-    expect(concludeTurn).toHaveBeenCalledTimes(1)
+    // 不能结束回合：没有助手消息的回合不会被渲染出工具行，卡片就看不见了。
+    expect(concludeTurn).not.toHaveBeenCalled()
   })
 })
