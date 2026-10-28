@@ -1787,6 +1787,7 @@ git commit -m "feat: 按阶段渲染的动态 system 提示段"
 
 **Files:**
 - Create: `src/router.ts`
+- Test: `tests/router.spec.ts`
 
 **Interfaces:**
 - Consumes: `SessionStore`、`noteUserMessage`、`finishRemedial`
@@ -1827,13 +1828,15 @@ export function registerRouter(ctx: Context, store: SessionStore): void {
     const state = store.get(sessionId)
     if (state) {
       // 同一批可能认领多条消息，取最后一条非空人类消息作为学生发言。
-      const human = payload.messages
-        .filter(message => {
-          const source = (message as { source?: { kind?: string } }).source
-          return source?.kind === 'user' && textOf(message) !== ''
-        })
+      const humanText = payload.messages
+        .filter(message => message.source.kind === 'user')
+        .map(message => textOf(message))
+        .filter(text => text !== '')
         .at(-1)
-      if (human) store.set(sessionId, noteUserMessage(state, textOf(human)))
+      if (humanText !== undefined) {
+        const advanced = noteUserMessage(state, humanText)
+        if (advanced !== state) store.set(sessionId, advanced)
+      }
     }
     return next()
   })
@@ -1842,8 +1845,8 @@ export function registerRouter(ctx: Context, store: SessionStore): void {
     if (event.type !== 'turn/end') return
     const state = store.get(session.id)
     if (!state) return
-    const next = finishRemedial(state)
-    if (next !== state) store.set(session.id, next)
+    const advanced = finishRemedial(state)
+    if (advanced !== state) store.set(session.id, advanced)
   })
 }
 ```
@@ -1856,10 +1859,18 @@ pnpm run build
 
 预期：构建成功。若 `session/event` 的监听签名与 `session.id` 不符，以 `packages/core/session/src/types.ts` 的实际类型为准调整，保持行为不变。
 
-- [ ] **Step 3: 提交**
+- [ ] **Step 3: 运行 router 测试**
 
 ```powershell
-git add src/router.ts
+pnpm vitest run tests/router.spec.ts
+```
+
+预期：17 个用例全部通过。
+
+- [ ] **Step 4: 提交**
+
+```powershell
+git add src/router.ts tests/router.spec.ts
 git commit -m "feat: pre-step 状态路由与回合结束迁移"
 ```
 
