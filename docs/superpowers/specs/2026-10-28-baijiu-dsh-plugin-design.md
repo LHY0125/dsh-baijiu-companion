@@ -146,9 +146,15 @@ interface LearningState {
 
 `execute` 内手检：题数等于 `questionCount`、每题选项数等于 `optionsPerQuestion`、题干与选项非空。不满足则抛错（表示模型输出无效，转由退化路径处理）。
 
-输出 canonical value：`{ topic, questions }`；`output.render` 渲染为给用户看的题目文本，末行附作答格式提示。
+输出 canonical value：`{ topic, questions, answers, answerLine }`；`output.render` 渲染为给用户看的题目文本。
 
-**不调用 `exec.concludeTurn()`。** 实测：结束回合会让该回合没有助手消息，客户端因此不渲染工具行，题目卡片被折叠成 0 高度、学生看不到。改为让模型在回复正文里用 Markdown 列出同样的题目并提示作答——工具行仍默认折叠在「已调用工具」里，正文才是学生实际看到的内容。
+**点选作答（2026-10-28 补充）。** `execute` 在落库题目后直接调用宿主的 `ctx.userQuestions.ask()`，题目以卡片形式出现在输入框座位（`conversation.composer`），学生点选项作答，答案随工具结果回到模型，阶段在工具内推进到 `grade`，模型在同一回合完成批改。要点：
+
+- 卡片请求**不带 `wait.callId`**。带 callId 的卡片由 session 投影负责回收，而本插件的提问不经过 `ask_user_question` 工具，投影里没有这一行——卡片会在请求结束后永久留在输入框。
+- `ask()` 是可选服务：`ctx.get('userQuestions')` 取不到、`assertLiveRoot` 拒绝（子代理）、学生放弃（`ASK_CANCELLED`）或调用被中断时，一律返回空 `answerLine` 退回文字作答，绝不因为卡片失败而让测验失败。
+- 工具返回值必须逐字段落在 `output.schema` 声明内：运行时会做 `additionalProperties` 校验，多带一个 `optionIndex` 就让整个调用失败（实测踩过）。`tests/submit-quiz.spec.ts` 有一条测试专门比对返回字段与 schema 声明。
+
+**不调用 `exec.concludeTurn()`。** 实测：结束回合会让该回合没有助手消息，客户端因此不渲染工具行。走点选卡片时学生的输入完全不经过消息通道，工具行只是结构化备份；走文字作答时模型仍会在正文列出题目。
 
 ### 5.3 工具 `submit_grade`
 
@@ -228,14 +234,22 @@ interface LearningState {
 /quiz
   → phase=quiz，followup("请出题并调用 submit_quiz")
       → 模型调用 submit_quiz
-          → 校验 -> 落库 quiz -> 卡片展示（不结束回合）
-  → 用户回答 "1A 2B 3C"
-      → pre-step: phase=quiz 且有题目且收到用户消息 → phase=grade
-      → 模型据 system 段调用 submit_grade（此时唯一可调用的工具）
+          → 校验 -> 落库 quiz
+          → ctx.userQuestions.ask() 弹出点选卡片（阻塞在本工具内）
+  → 学生点选项（一题一屏）
+      → 答案回到 submit_quiz 的返回值 answerLine="1A 2B 3C"
+      → 工具内 enterGrade：phase=grade（无用户消息经过路由）
+      → 同一回合：模型调用 submit_grade
           → 落库 score/weakPoint -> phase=remedial
-          → exec.deferContext("请针对「高温堆积发酵」重新讲解…")
-              → 同一回合下一步：模型补讲 -> pre-step: phase=explain
+          → exec.deferContext("请针对「高温堆积」重新讲解…")
+              → 同一回合下一步：模型补讲 -> 回合结束：phase=explain
                   → 用户可说 "/quiz" 再考一次
+
+  退化（终端无答题者 / 学生放弃卡片）：
+      → answerLine="" -> 模型在正文列出题目
+      → 学生回 "1A 2B 3C"
+          → pre-step: phase=quiz 且有题目且收到用户消息 → phase=grade
+```
 ```
 
 ## 7. 配置
@@ -321,5 +335,5 @@ git 安装会拉取源码而非构建产物。因此 `lib/` 作为构建产物**
 ## 11. 未决项
 
 - 是否需要 `ctx.storage` 持久化教学进度（首版不做）。
-- 是否需要为题目/评语提供自定义 Web 卡片（首版走通用卡片）。
+- ~~是否需要为题目/评语提供自定义 Web 卡片~~ —— 已定：出题走宿主 `ctx.userQuestions` 的点选卡片（`conversation.composer` 座位）。
 - 是否接入本地 vLLM 作为 OpenAI 兼容 provider（属 harness 配置，不属插件职责）。

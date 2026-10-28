@@ -21,9 +21,10 @@ export declare function validateQuiz(args: SubmitQuizArgs, config: Config): Quiz
  * 把题目渲染成给用户看的文本。
  * @param topic - 主题。
  * @param questions - 题目列表。
- * @returns Markdown 文本，末行附作答格式。
+ * @param answerLine - 学生已有的作答；省略时提示文字作答。
+ * @returns Markdown 文本。
  */
-export declare function formatQuiz(topic: string, questions: readonly QuizQuestion[]): string;
+export declare function formatQuiz(topic: string, questions: readonly QuizQuestion[], answerLine?: string): string;
 /**
  * 注册 `submit_quiz` 工具，仅在"出题态且尚无题目"时可执行。
  * @param ctx - Cordis 上下文。

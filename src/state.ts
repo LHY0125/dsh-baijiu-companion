@@ -55,9 +55,19 @@ export function noteUserMessage(state: LearningState, text: string): LearningSta
     return { ...state, phase: 'qa', summary: composeSummary(state.topic, state.focus, text) }
   }
   if (state.phase === 'quiz' && state.quiz !== null) {
-    return { ...state, phase: 'grade' }
+    return enterGrade(state)
   }
   return state
+}
+
+/**
+ * 学生已作答，进入批改态。
+ * 点选卡片把作答直接交回工具，没有学生消息经过路由，因此这条迁移也要能被工具调用。
+ * @param state - 当前状态。
+ * @returns 批改态的新状态；非「已有题目的出题态」原样返回。
+ */
+export function enterGrade(state: LearningState): LearningState {
+  return state.phase === 'quiz' && state.quiz !== null ? { ...state, phase: 'grade' } : state
 }
 
 /**

@@ -35,6 +35,13 @@ export declare function activate(topic: string): LearningState;
  */
 export declare function noteUserMessage(state: LearningState, text: string): LearningState;
 /**
+ * 学生已作答，进入批改态。
+ * 点选卡片把作答直接交回工具，没有学生消息经过路由，因此这条迁移也要能被工具调用。
+ * @param state - 当前状态。
+ * @returns 批改态的新状态；非「已有题目的出题态」原样返回。
+ */
+export declare function enterGrade(state: LearningState): LearningState;
+/**
  * 进入出题态：清空上一轮题目与聚焦点。
  * @param state - 当前状态。
  * @returns 出题态的新状态。

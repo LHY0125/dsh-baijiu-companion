@@ -3,6 +3,7 @@ import { composeSummary } from '../src/summary.js'
 import {
   activate,
   bumpReminder,
+  enterGrade,
   enterQuiz,
   finishRemedial,
   noteGrade,
@@ -125,5 +126,15 @@ describe('状态迁移', () => {
     const after = noteUserMessage(before, '为什么叫酱香')
     expect(before.phase).toBe('explain')
     expect(before.summary).not.toBe(after.summary)
+  })
+
+  it('已出题时 enterGrade 推进到批改态', () => {
+    const quizState = noteQuiz(activate('酱香工艺'), sampleQuiz)
+    expect(enterGrade(quizState).phase).toBe('grade')
+  })
+
+  it('尚未出题时 enterGrade 返回原引用', () => {
+    const state = activate('酱香工艺')
+    expect(enterGrade(state)).toBe(state)
   })
 })

@@ -1,6 +1,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { describe, expect, it, vi } from 'vitest'
+import type { QuizAsker } from '../src/ask.js'
+import { questionId } from '../src/ask.js'
 import { activate, noteQuiz } from '../src/state.js'
 import { SessionStore } from '../src/store.js'
 import { formatQuiz, registerSubmitQuiz, validateQuiz } from '../src/tools/submit-quiz.js'
@@ -25,9 +27,10 @@ const ok = {
 /**
  * 用一个假 ctx 捕获 `registerSubmitQuiz` 注册的工具定义。
  * @param store - 传给注册函数的会话状态表。
+ * @param asker - 冒充的提问服务；省略表示宿主没有答题者。
  * @returns 被捕获的工具定义。
  */
-function captureDefinition(store: SessionStore): ToolDefinition {
+function captureDefinition(store: SessionStore, asker?: QuizAsker): ToolDefinition {
   let captured: ToolDefinition | undefined
   const ctx = {
     tools: {
@@ -36,6 +39,7 @@ function captureDefinition(store: SessionStore): ToolDefinition {
         return () => {}
       },
     },
+    get: (name: string) => (name === 'userQuestions' ? asker : undefined),
   } as unknown as Context
   registerSubmitQuiz(ctx, store, config)
   if (captured === undefined) throw new Error('未捕获到工具定义')
@@ -54,6 +58,7 @@ function fakeExec(sessionId: string | undefined): {
   const concludeTurn = vi.fn()
   const exec = {
     agent: sessionId === undefined ? undefined : { id: sessionId },
+    signal: new AbortController().signal,
     concludeTurn,
   } as unknown as ToolRunContext
   return { exec, concludeTurn }
@@ -101,6 +106,12 @@ describe('formatQuiz', () => {
     ])
     expect(text).toContain('F. 己')
     expect(text).toContain('7. 庚')
+  })
+
+  it('学生已作答时回显作答，不再提示文字格式', () => {
+    const text = formatQuiz('酱香工艺', [{ stem: '题一', options: ['甲'] }], '1A')
+    expect(text).toContain('学生已点选作答：1A')
+    expect(text).not.toContain('1A 2B 3C')
   })
 })
 
@@ -172,9 +183,85 @@ describe('registerSubmitQuiz', () => {
 
     const value = await definition.execute(args, exec)
 
-    expect(value).toEqual({ topic: '酱香工艺', questions: args.questions })
+    expect(value).toEqual({
+      topic: '酱香工艺',
+      questions: args.questions,
+      answers: [],
+      answerLine: '',
+    })
     expect(store.get('s1')?.quiz?.questions).toHaveLength(2)
     // 不能结束回合：没有助手消息的回合不会被渲染出工具行，卡片就看不见了。
     expect(concludeTurn).not.toHaveBeenCalled()
+  })
+
+  it('没有答题者时停在出题态，等学生用文字作答', async () => {
+    const store = new SessionStore(10)
+    store.set('s1', { ...activate('酱香工艺'), phase: 'quiz', quiz: null })
+    const definition = captureDefinition(store)
+
+    await definition.execute(args, fakeExec('s1').exec)
+
+    expect(store.get('s1')?.phase).toBe('quiz')
+  })
+
+  it('学生在卡片上作答后记录作答并推进到批改态', async () => {
+    const store = new SessionStore(10)
+    store.set('s1', { ...activate('酱香工艺'), phase: 'quiz', quiz: null })
+    const asker: QuizAsker = {
+      ask: async () => ({
+        answers: [
+          { id: questionId(0), selected: ['B. 乙'] },
+          { id: questionId(1), selected: ['C. 丙'] },
+        ],
+      }),
+    }
+    const definition = captureDefinition(store, asker)
+
+    const value = await definition.execute(args, fakeExec('s1').exec)
+
+    expect(value).toMatchObject({ answerLine: '1B 2C' })
+    expect(value).toHaveProperty('answers', [
+      { index: 1, letter: 'B', custom: '' },
+      { index: 2, letter: 'C', custom: '' },
+    ])
+    expect(store.get('s1')?.phase).toBe('grade')
+  })
+
+  it('答题者抛错时退回文字作答，阶段不动', async () => {
+    const store = new SessionStore(10)
+    store.set('s1', { ...activate('酱香工艺'), phase: 'quiz', quiz: null })
+    const asker: QuizAsker = { ask: async () => { throw new Error('NO_PROVIDER') } }
+    const definition = captureDefinition(store, asker)
+
+    const value = await definition.execute(args, fakeExec('s1').exec)
+
+    expect(value).toMatchObject({ answers: [], answerLine: '' })
+    expect(store.get('s1')?.phase).toBe('quiz')
+  })
+
+  it('返回值里没有 schema 未声明的字段', async () => {
+    // 运行时会对 canonical value 做 additionalProperties 校验，多带一个未声明的
+    // 字段整个工具调用就会失败。实测踩过一次（answers 里混进了 optionIndex）。
+    const freshStore = (): SessionStore => {
+      const store = new SessionStore(10)
+      store.set('s1', { ...activate('酱香工艺'), phase: 'quiz', quiz: null })
+      return store
+    }
+    const definition = captureDefinition(freshStore())
+    const schema = definition.output.schema as unknown as {
+      properties: Record<string, { items?: { properties?: Record<string, unknown> } }>
+    }
+    const answersSchema = schema.properties.answers?.items?.properties ?? {}
+
+    const textMode = await definition.execute(args, fakeExec('s1').exec)
+    expect(Object.keys(textMode).every(key => key in schema.properties)).toBe(true)
+
+    const asker: QuizAsker = {
+      ask: async () => ({ answers: [{ id: questionId(0), selected: ['A. 甲'] }] }),
+    }
+    const cardMode = await captureDefinition(freshStore(), asker).execute(args, fakeExec('s1').exec)
+    expect(Object.keys(cardMode).every(key => key in schema.properties)).toBe(true)
+    const answers = (cardMode as { answers: Record<string, unknown>[] }).answers
+    expect(answers.every(item => Object.keys(item).every(key => key in answersSchema))).toBe(true)
   })
 })

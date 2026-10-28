@@ -1,12 +1,13 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-user-questions'
+import type { AnsweredQuestion, QuizAsker } from '../ask.js'
+import { askQuiz, formatAnswers } from '../ask.js'
 import type { Config } from '../config.js'
-import type { QuizQuestion } from '../state.js'
-import { noteQuiz } from '../state.js'
+import { optionLabel } from '../options.js'
+import type { Quiz, QuizQuestion } from '../state.js'
+import { enterGrade, noteQuiz } from '../state.js'
 import type { SessionStore } from '../store.js'
-
-/** 题目选项字母表，供渲染作答格式使用。 */
-const OPTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F']
 
 /** `submit_quiz` 的参数。 */
 export interface SubmitQuizArgs {
@@ -51,21 +52,26 @@ export function validateQuiz(args: SubmitQuizArgs, config: Config): QuizQuestion
  * 把题目渲染成给用户看的文本。
  * @param topic - 主题。
  * @param questions - 题目列表。
- * @returns Markdown 文本，末行附作答格式。
+ * @param answerLine - 学生已有的作答；省略时提示文字作答。
+ * @returns Markdown 文本。
  */
-export function formatQuiz(topic: string, questions: readonly QuizQuestion[]): string {
+export function formatQuiz(
+  topic: string,
+  questions: readonly QuizQuestion[],
+  answerLine?: string,
+): string {
   const body = questions
     .map((question, index) => {
       const options = question.options
-        .map(
-          (option, optionIndex) =>
-            `${OPTION_LETTERS[optionIndex] ?? String(optionIndex + 1)}. ${option}`,
-        )
+        .map((option, optionIndex) => optionLabel(optionIndex, option))
         .join('\n')
       return `${index + 1}. ${question.stem}\n${options}`
     })
     .join('\n\n')
-  return `### 📝 随堂测验 · ${topic}\n\n${body}\n\n---\n请按 \`1A 2B 3C\` 的格式回复你的答案。`
+  const tail = answerLine === undefined || answerLine === ''
+    ? '请按 `1A 2B 3C` 的格式回复你的答案。'
+    : `学生已点选作答：${answerLine}`
+  return `### 📝 随堂测验 · ${topic}\n\n${body}\n\n---\n${tail}`
 }
 
 /**
@@ -78,7 +84,9 @@ export function registerSubmitQuiz(ctx: Context, store: SessionStore, config: Co
   ctx.tools.register(
     defineTool({
       name: 'submit_quiz',
-      description: '提交本次测验的题目。只提交题干与选项，不要提交任何答案。',
+      description:
+        '提交本次测验的题目。只提交题干与选项，不要提交任何答案。'
+        + '工具会把题目弹出成可点选的卡片让学生作答，返回值里带回学生的作答。',
       parameters: {
         questions: {
           type: 'array',
@@ -117,11 +125,31 @@ export function registerSubmitQuiz(ctx: Context, store: SessionStore, config: Co
                 },
               },
             },
+            answers: {
+              type: 'array',
+              required: true,
+              description: '学生在点选卡片上给出的作答；为空表示学生没在卡片上作答',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  index: { type: 'integer', required: true },
+                  letter: { type: 'string', required: true },
+                  custom: { type: 'string', required: true },
+                },
+              },
+            },
+            answerLine: {
+              type: 'string',
+              required: true,
+              description: '形如 "1A 2B 3C"；空串表示学生没在卡片上作答，需请学生用文字作答',
+            },
           },
         },
-        render: (_args, value) => [
-          { type: 'text', text: formatQuiz(value.topic, value.questions) },
-        ],
+        render: (_args, value) => [{
+          type: 'text',
+          text: formatQuiz(value.topic, value.questions, value.answerLine),
+        }],
       },
       execute: async (args, exec) => {
         const agent = exec.agent
@@ -134,17 +162,35 @@ export function registerSubmitQuiz(ctx: Context, store: SessionStore, config: Co
         if (state.quiz !== null) {
           throw new Error('本次测验的题目已经提交，请等待学生作答')
         }
-        const questions = validateQuiz(args, config)
-        store.set(agent.id, noteQuiz(state, { topic: state.topic, questions }))
+        const quiz: Quiz = { topic: state.topic, questions: validateQuiz(args, config) }
+        store.set(agent.id, noteQuiz(state, quiz))
         // 刻意不调用 exec.concludeTurn()：没有助手消息的回合不会被渲染出工具行，
         // 卡片就没有落点（实测卡片仍在 DOM 但行高被折叠为 0，用户看不到题目）。
-        // 让模型回一句提示即可，指令已要求它不要复述题目。
+        const asker = ctx.get('userQuestions') as QuizAsker | undefined
+        const answered = asker === undefined ? null : await askQuiz(asker, agent, quiz, exec.signal)
+        const payload = quiz.questions.map(question => ({
+          stem: question.stem,
+          options: [...question.options],
+        }))
+        if (answered === null) {
+          // 没有点选卡片（终端、学生取消、宿主未装答题者）：退回文字作答，
+          // 阶段停在出题态，等学生发言后由路由推进到批改态。
+          return { topic: quiz.topic, questions: payload, answers: [] as AnsweredQuestion[], answerLine: '' }
+        }
+        // 学生已经在卡片上作答，没有用户消息经过路由，阶段由这里推进。
+        const current = store.get(agent.id)
+        if (current !== undefined) store.set(agent.id, enterGrade(current))
         return {
-          topic: state.topic,
-          questions: questions.map(question => ({
-            stem: question.stem,
-            options: [...question.options],
+          topic: quiz.topic,
+          questions: payload,
+          // 只交回 schema 声明过的字段：运行时会对 canonical value 做
+          // additionalProperties 校验，多带一个 optionIndex 就直接抛错。
+          answers: answered.map(item => ({
+            index: item.index,
+            letter: item.letter,
+            custom: item.custom,
           })),
+          answerLine: formatAnswers(answered),
         }
       },
     }),
