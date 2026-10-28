@@ -18,21 +18,37 @@ const PHASE_INSTRUCTIONS: Record<Phase, string> = {
 }
 
 /**
+ * 折叠空白为单个空格并去掉首尾空格。
+ * 用户可控文本（主题、聚焦、摘要、弱点）可能含换行，若不归一化就能伪造出
+ * 形如「【当前阶段】出题中」的假状态行。只在渲染时归一化，写入侧保留原值，
+ * 以免 /status 展示的原始输入被改写。
+ * @param text - 待归一化的文本。
+ * @returns 单行文本。
+ */
+function foldWhitespace(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+/**
  * 渲染注入 system 提示的状态块。
  * @param state - 当前教学状态。
  * @param config - 插件配置。
  * @returns 多行文本。
  */
 export function renderStateBlock(state: LearningState, config: Config): string {
+  const topic = foldWhitespace(state.topic || config.defaultTopic)
+  const focus = foldWhitespace(state.focus)
+  const summary = foldWhitespace(state.summary)
+  const weakPoints = state.weakPoints.slice(-3).map(point => foldWhitespace(point))
   const lines = [
     '你是白酒学伴，一位亲切专业的酿酒老师傅。',
     `【当前阶段】${PHASE_LABELS[state.phase]}`,
-    `【当前主题】${state.topic || config.defaultTopic}`,
+    `【当前主题】${topic}`,
   ]
-  if (state.focus) lines.push(`【当前聚焦】${state.focus}`)
-  lines.push(`【上下文摘要】${state.summary}`)
-  if (state.weakPoints.length > 0) {
-    lines.push(`【待巩固】${state.weakPoints.slice(-3).join(' / ')}`)
+  if (focus) lines.push(`【当前聚焦】${focus}`)
+  lines.push(`【上下文摘要】${summary}`)
+  if (weakPoints.length > 0) {
+    lines.push(`【待巩固】${weakPoints.join(' / ')}`)
   }
   lines.push(PHASE_INSTRUCTIONS[state.phase])
   return lines.join('\n')
@@ -48,6 +64,10 @@ export function registerPrompt(ctx: Context, store: SessionStore, config: Config
   ctx.systemPrompt.section({
     name: 'baijiu:state',
     order: 600,
+    // 本段是字面文本：renderPrompt 默认会做 {{变量}} 插值，遇到完整 {{…}} 组会抛错，
+    // 而本段嵌入了用户可控的主题/摘要/聚焦，一次 /learn {{x}} 就能让该会话此后每轮装配失败。
+    // 本插件未注册任何 prompt 变量，关掉插值没有副作用。
+    interpolate: false,
     text: context => {
       const agent = context.agent
       if (!agent) return ''
