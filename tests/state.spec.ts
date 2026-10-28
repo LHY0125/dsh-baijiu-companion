@@ -3,6 +3,7 @@ import { composeSummary } from '../src/summary.js'
 import {
   activate,
   bumpReminder,
+  enterQuiz,
   finishRemedial,
   noteGrade,
   noteQuiz,
@@ -46,6 +47,17 @@ describe('状态迁移', () => {
     const state = noteUserMessage(activate('酱香工艺'), '为什么叫酱香')
     expect(state.phase).toBe('qa')
     expect(state.summary).toContain('为什么叫酱香')
+  })
+
+  it('进入出题态时清空上一轮题目与聚焦点', () => {
+    const withQuiz = noteQuiz(activate('酱香工艺'), sampleQuiz)
+    // noteGrade 会写入 focus，再把题目补回来，得到「既有题目又有聚焦点」的状态，
+    // 这样两条清空断言都不会空转。
+    const stale = { ...noteGrade(withQuiz, '制曲', 5), quiz: withQuiz.quiz }
+    const entered = enterQuiz(stale)
+    expect(entered.phase).toBe('quiz')
+    expect(entered.quiz).toBeNull()
+    expect(entered.focus).toBe('')
   })
 
   it('出题态收到作答后进入批改态', () => {

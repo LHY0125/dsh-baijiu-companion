@@ -61,6 +61,15 @@ export function noteUserMessage(state: LearningState, text: string): LearningSta
 }
 
 /**
+ * 进入出题态：清空上一轮题目与聚焦点。
+ * @param state - 当前状态。
+ * @returns 出题态的新状态。
+ */
+export function enterQuiz(state: LearningState): LearningState {
+  return { ...state, phase: 'quiz', quiz: null, focus: '' }
+}
+
+/**
  * 记录模型提交的题目。
  * @param state - 当前状态。
  * @param quiz - 校验通过的测验。

@@ -3,8 +3,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Config } from './config.js'
+import { PHASE_LABELS } from './phase-label.js'
 import { BAIJIU_SOURCE } from './source.js'
-import { activate } from './state.js'
+import { activate, enterQuiz } from './state.js'
 import type { SessionStore } from './store.js'
 
 /**
@@ -37,16 +38,16 @@ export function registerCommands(ctx: Context, store: SessionStore, config: Conf
 
   ctx.commands.register({
     name: 'quiz',
-    description: '进入测验：出 3 道单选题',
+    description: `进入测验：出 ${config.questionCount} 道单选题`,
     handler: ({ agent }) => {
       const state = store.get(agent.id)
       if (!state) {
         return { kind: 'error', text: '尚未选择主题，请先用 /learn <主题> 开始学习。' }
       }
-      store.set(agent.id, { ...state, phase: 'quiz', quiz: null, focus: '' })
+      store.set(agent.id, enterQuiz(state))
       sendToAgent(
         agent,
-        `请针对「${state.topic}」出 ${config.questionCount} 道单项选择题，只给题目和选项，然后用 submit_quiz 工具提交。`,
+        `请针对「${state.topic}」出 ${config.questionCount} 道单项选择题，只给题干和选项，绝不要输出答案，然后用 submit_quiz 工具提交，不要在回复正文里复述题目。`,
       )
       return { kind: 'success', text: '已进入出题模式。' }
     },
@@ -59,7 +60,7 @@ export function registerCommands(ctx: Context, store: SessionStore, config: Conf
       const state = store.get(agent.id)
       if (!state) return { kind: 'success', text: '尚未开始学习。用 /learn <主题> 开始。' }
       const lines = [
-        `阶段：${state.phase}`,
+        `阶段：${PHASE_LABELS[state.phase]}`,
         `主题：${state.topic || config.defaultTopic}`,
         `聚焦：${state.focus || '无'}`,
         `待巩固：${state.weakPoints.length > 0 ? state.weakPoints.join(' / ') : '无'}`,

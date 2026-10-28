@@ -204,6 +204,7 @@ git commit -m "chore: 初始化 dsh-baijiu-companion 包骨架"
   - `interface LearningState { phase, topic, focus, summary, weakPoints, quiz, reminderAttempts }`
   - `activate(topic: string): LearningState`
   - `noteUserMessage(state: LearningState, text: string): LearningState`
+  - `enterQuiz(state: LearningState): LearningState`
   - `noteQuiz(state: LearningState, quiz: Quiz): LearningState`
   - `noteGrade(state: LearningState, weakPoint: string, maxWeakPoints: number): LearningState`
   - `finishRemedial(state: LearningState): LearningState`
@@ -402,6 +403,15 @@ export function noteUserMessage(state: LearningState, text: string): LearningSta
     return { ...state, phase: 'grade' }
   }
   return state
+}
+
+/**
+ * 进入出题态：清空上一轮题目与聚焦点。
+ * @param state - 当前状态。
+ * @returns 出题态的新状态。
+ */
+export function enterQuiz(state: LearningState): LearningState {
+  return { ...state, phase: 'quiz', quiz: null, focus: '' }
 }
 
 /**
@@ -1369,9 +1379,11 @@ git commit -m "feat: submit_grade 工具与补学上下文投递"
 
 **Files:**
 - Create: `src/commands.ts`
+- Create: `src/phase-label.ts`
+- Modify: `src/state.ts`（新增 `enterQuiz` 迁移）
 
 **Interfaces:**
-- Consumes: `SessionStore`、`Config`、`activate`、`BAIJIU_SOURCE`
+- Consumes: `SessionStore`、`Config`、`activate`、`enterQuiz`、`PHASE_LABELS`、`BAIJIU_SOURCE`
 - Produces: `registerCommands(ctx: Context, store: SessionStore, config: Config): void`，注册 `/learn`、`/quiz`、`/status`、`/reset`。
 
 本任务是薄胶水层，行为由 Task 11 的集成冒烟验证；纯逻辑已在 Task 2/4 覆盖。
@@ -1380,10 +1392,13 @@ git commit -m "feat: submit_grade 工具与补学上下文投递"
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
+// 仅为加载 dsh-commands 对 cordis Context 的模块增强（ctx.commands），编译后完全擦除。
+import type {} from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Config } from './config.js'
+import { PHASE_LABELS } from './phase-label.js'
 import { BAIJIU_SOURCE } from './source.js'
-import { activate } from './state.js'
+import { activate, enterQuiz } from './state.js'
 import type { SessionStore } from './store.js'
 
 /**
@@ -1416,16 +1431,16 @@ export function registerCommands(ctx: Context, store: SessionStore, config: Conf
 
   ctx.commands.register({
     name: 'quiz',
-    description: '进入测验：出 3 道单选题',
+    description: `进入测验：出 ${config.questionCount} 道单选题`,
     handler: ({ agent }) => {
       const state = store.get(agent.id)
       if (!state) {
         return { kind: 'error', text: '尚未选择主题，请先用 /learn <主题> 开始学习。' }
       }
-      store.set(agent.id, { ...state, phase: 'quiz', quiz: null, focus: '' })
+      store.set(agent.id, enterQuiz(state))
       sendToAgent(
         agent,
-        `请针对「${state.topic}」出 ${config.questionCount} 道单项选择题，只给题目和选项，然后用 submit_quiz 工具提交。`,
+        `请针对「${state.topic}」出 ${config.questionCount} 道单项选择题，只给题干和选项，绝不要输出答案，然后用 submit_quiz 工具提交，不要在回复正文里复述题目。`,
       )
       return { kind: 'success', text: '已进入出题模式。' }
     },
@@ -1438,7 +1453,7 @@ export function registerCommands(ctx: Context, store: SessionStore, config: Conf
       const state = store.get(agent.id)
       if (!state) return { kind: 'success', text: '尚未开始学习。用 /learn <主题> 开始。' }
       const lines = [
-        `阶段：${state.phase}`,
+        `阶段：${PHASE_LABELS[state.phase]}`,
         `主题：${state.topic || config.defaultTopic}`,
         `聚焦：${state.focus || '无'}`,
         `待巩固：${state.weakPoints.length > 0 ? state.weakPoints.join(' / ') : '无'}`,
@@ -1482,7 +1497,7 @@ git commit -m "feat: /learn /quiz /status /reset 命令"
 - Create: `src/prompt.ts`
 
 **Interfaces:**
-- Consumes: `SessionStore`、`Config`、`Phase`
+- Consumes: `SessionStore`、`Config`、`Phase`、`PHASE_LABELS`
 - Produces: `renderStateBlock(state: LearningState, config: Config): string`、`registerPrompt(ctx, store, config): void`
 
 - [ ] **Step 1: 实现 `src/prompt.ts`**
@@ -1490,6 +1505,7 @@ git commit -m "feat: /learn /quiz /status /reset 命令"
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
 import type { Config } from './config.js'
+import { PHASE_LABELS } from './phase-label.js'
 import type { LearningState, Phase } from './state.js'
 import type { SessionStore } from './store.js'
 
@@ -1511,7 +1527,7 @@ const PHASE_INSTRUCTIONS: Record<Phase, string> = {
 export function renderStateBlock(state: LearningState, config: Config): string {
   const lines = [
     '你是白酒学伴，一位亲切专业的酿酒老师傅。',
-    `【当前阶段】${state.phase}`,
+    `【当前阶段】${PHASE_LABELS[state.phase]}`,
     `【当前主题】${state.topic || config.defaultTopic}`,
   ]
   if (state.focus) lines.push(`【当前聚焦】${state.focus}`)
