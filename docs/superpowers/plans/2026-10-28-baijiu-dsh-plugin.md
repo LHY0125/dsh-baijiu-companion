@@ -730,8 +730,12 @@ git commit -m "feat: 会话教学状态 LRU 存储"
 `tests/submit-quiz.spec.ts`：
 
 ```ts
-import { describe, expect, it } from 'vitest'
-import { formatQuiz, validateQuiz } from '../src/tools/submit-quiz.js'
+import type { Context } from '@deepseek-ai/cordis'
+import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { describe, expect, it, vi } from 'vitest'
+import { activate, noteQuiz } from '../src/state.js'
+import { SessionStore } from '../src/store.js'
+import { formatQuiz, registerSubmitQuiz, validateQuiz } from '../src/tools/submit-quiz.js'
 
 const config = {
   topics: ['酱香工艺'],
@@ -748,6 +752,43 @@ const ok = {
     { stem: '题一', options: ['A', 'B', 'C'] },
     { stem: '题二', options: ['A', 'B', 'C'] },
   ],
+}
+
+/**
+ * 用一个假 ctx 捕获 `registerSubmitQuiz` 注册的工具定义。
+ * @param store - 传给注册函数的会话状态表。
+ * @returns 被捕获的工具定义。
+ */
+function captureDefinition(store: SessionStore): ToolDefinition {
+  let captured: ToolDefinition | undefined
+  const ctx = {
+    tools: {
+      register: (definition: ToolDefinition) => {
+        captured = definition
+        return () => {}
+      },
+    },
+  } as unknown as Context
+  registerSubmitQuiz(ctx, store, config)
+  if (captured === undefined) throw new Error('未捕获到工具定义')
+  return captured
+}
+
+/**
+ * 造一个假的执行上下文。
+ * @param sessionId - 关联会话 id；传 undefined 表示没有关联会话。
+ * @returns 执行上下文与 `concludeTurn` 的替身。
+ */
+function fakeExec(sessionId: string | undefined): {
+  exec: ToolRunContext
+  concludeTurn: ReturnType<typeof vi.fn>
+} {
+  const concludeTurn = vi.fn()
+  const exec = {
+    agent: sessionId === undefined ? undefined : { id: sessionId },
+    concludeTurn,
+  } as unknown as ToolRunContext
+  return { exec, concludeTurn }
 }
 
 describe('validateQuiz', () => {
@@ -768,6 +809,11 @@ describe('validateQuiz', () => {
     const bad = { questions: [{ stem: '  ', options: ['A', 'B', 'C'] }, ok.questions[1]!] }
     expect(() => validateQuiz(bad, config)).toThrow(/题干/)
   })
+
+  it('选项为空时抛错', () => {
+    const bad = { questions: [{ stem: '题一', options: ['A', '   ', 'C'] }, ok.questions[1]!] }
+    expect(() => validateQuiz(bad, config)).toThrow(/第 1 题第 2 个选项为空/)
+  })
 })
 
 describe('formatQuiz', () => {
@@ -779,6 +825,88 @@ describe('formatQuiz', () => {
     expect(text).toContain('1. 题一')
     expect(text).toContain('A. 甲')
     expect(text).toContain('1A')
+  })
+
+  it('选项超过字母表长度时退化为数字序号', () => {
+    const text = formatQuiz('酱香工艺', [
+      { stem: '题一', options: ['甲', '乙', '丙', '丁', '戊', '己', '庚'] },
+    ])
+    expect(text).toContain('F. 己')
+    expect(text).toContain('7. 庚')
+  })
+})
+
+describe('render', () => {
+  it('渲染出题目正文与作答格式提示', () => {
+    const definition = captureDefinition(new SessionStore(10))
+    const blocks = definition.output.render(
+      { questions: [] },
+      {
+        topic: '酱香工艺',
+        questions: [{ stem: '题一', options: ['甲', '乙', '丙'] }],
+      },
+    )
+    expect(blocks).toHaveLength(1)
+    const text = (blocks[0] as { text: string }).text
+    expect(text).toContain('1. 题一')
+    expect(text).toContain('A. 甲')
+    expect(text).toContain('请按 `1A 2B 3C` 的格式回复')
+  })
+})
+
+describe('registerSubmitQuiz', () => {
+  const args = {
+    questions: [
+      { stem: '题一', options: ['甲', '乙', '丙'] },
+      { stem: '题二', options: ['甲', '乙', '丙'] },
+    ],
+  }
+
+  it('没有关联会话时抛错', async () => {
+    const definition = captureDefinition(new SessionStore(10))
+    const { exec } = fakeExec(undefined)
+    await expect(definition.execute(args, exec)).rejects.toThrow(/没有关联会话/)
+  })
+
+  it('会话没有教学状态时抛错', async () => {
+    const definition = captureDefinition(new SessionStore(10))
+    const { exec } = fakeExec('s1')
+    await expect(definition.execute(args, exec)).rejects.toThrow(/没有教学状态/)
+  })
+
+  it('非出题阶段时抛错', async () => {
+    const store = new SessionStore(10)
+    store.set('s1', activate('酱香工艺'))
+    const definition = captureDefinition(store)
+    const { exec } = fakeExec('s1')
+    await expect(definition.execute(args, exec)).rejects.toThrow(/不能提交题目/)
+  })
+
+  it('已有题目时抛重复提交错误', async () => {
+    const store = new SessionStore(10)
+    store.set(
+      's1',
+      noteQuiz(activate('酱香工艺'), {
+        topic: '酱香工艺',
+        questions: [{ stem: '旧题', options: ['甲', '乙', '丙'] }],
+      }),
+    )
+    const definition = captureDefinition(store)
+    const { exec } = fakeExec('s1')
+    await expect(definition.execute(args, exec)).rejects.toThrow(/已经提交/)
+  })
+
+  it('出题阶段成功时写入题目并结束回合', async () => {
+    const store = new SessionStore(10)
+    store.set('s1', { ...activate('酱香工艺'), phase: 'quiz', quiz: null })
+    const definition = captureDefinition(store)
+    const { exec, concludeTurn } = fakeExec('s1')
+
+    const value = await definition.execute(args, exec)
+
+    expect(value).toEqual({ topic: '酱香工艺', questions: args.questions })
+    expect(store.get('s1')?.quiz?.questions).toHaveLength(2)
+    expect(concludeTurn).toHaveBeenCalledTimes(1)
   })
 })
 ```
@@ -817,7 +945,7 @@ export interface SubmitQuizArgs {
  * @param args - 工具参数。
  * @param config - 插件配置，提供题数与选项数约束。
  * @returns 校验通过的题目列表。
- * @throws 题目数、选项数或题干不合法时抛出带中文说明的错误。
+ * @throws 题目数、选项数、题干或选项为空时抛出带中文说明的错误。
  */
 export function validateQuiz(args: SubmitQuizArgs, config: Config): QuizQuestion[] {
   if (args.questions.length !== config.questionCount) {
@@ -832,7 +960,14 @@ export function validateQuiz(args: SubmitQuizArgs, config: Config): QuizQuestion
         `第 ${index + 1} 题选项数必须为 ${config.optionsPerQuestion}，实际 ${question.options.length}`,
       )
     }
-    return { stem: question.stem.trim(), options: question.options.map(o => o.trim()) }
+    const options = question.options.map((option, optionIndex) => {
+      const trimmed = option.trim()
+      if (trimmed === '') {
+        throw new Error(`第 ${index + 1} 题第 ${optionIndex + 1} 个选项为空`)
+      }
+      return trimmed
+    })
+    return { stem: question.stem.trim(), options }
   })
 }
 
@@ -846,7 +981,10 @@ export function formatQuiz(topic: string, questions: readonly QuizQuestion[]): s
   const body = questions
     .map((question, index) => {
       const options = question.options
-        .map((option, optionIndex) => `${OPTION_LETTERS[optionIndex]}. ${option}`)
+        .map(
+          (option, optionIndex) =>
+            `${OPTION_LETTERS[optionIndex] ?? String(optionIndex + 1)}. ${option}`,
+        )
         .join('\n')
       return `${index + 1}. ${question.stem}\n${options}`
     })
@@ -891,11 +1029,22 @@ export function registerSubmitQuiz(ctx: Context, store: SessionStore, config: Co
           additionalProperties: false,
           properties: {
             topic: { type: 'string', required: true },
-            questionCount: { type: 'integer', required: true },
+            questions: {
+              type: 'array',
+              required: true,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  stem: { type: 'string', required: true },
+                  options: { type: 'array', required: true, items: { type: 'string' } },
+                },
+              },
+            },
           },
         },
         render: (_args, value) => [
-          { type: 'text', text: `已提交 ${value.questionCount} 道题，主题「${value.topic}」。` },
+          { type: 'text', text: formatQuiz(value.topic, value.questions) },
         ],
       },
       execute: async (args, exec) => {
@@ -903,13 +1052,22 @@ export function registerSubmitQuiz(ctx: Context, store: SessionStore, config: Co
         if (!agent) throw new Error('当前调用没有关联会话')
         const state = store.get(agent.id)
         if (!state) throw new Error('当前会话没有教学状态，请先用 /learn <主题> 开始学习')
-        if (state.phase !== 'quiz' || state.quiz !== null) {
+        if (state.phase !== 'quiz') {
           throw new Error(`当前处于「${state.phase}」阶段，不能提交题目`)
+        }
+        if (state.quiz !== null) {
+          throw new Error('本次测验的题目已经提交，请等待学生作答')
         }
         const questions = validateQuiz(args, config)
         store.set(agent.id, noteQuiz(state, { topic: state.topic, questions }))
         exec.concludeTurn()
-        return { topic: state.topic, questionCount: questions.length }
+        return {
+          topic: state.topic,
+          questions: questions.map(question => ({
+            stem: question.stem,
+            options: [...question.options],
+          })),
+        }
       },
     }),
   )
@@ -1311,7 +1469,7 @@ import type { SessionStore } from './store.js'
 const PHASE_INSTRUCTIONS: Record<Phase, string> = {
   explain: '请用通俗易懂的语言讲解当前主题，包含核心工艺或特点，400 字以内，最后提出一个启发性问题。',
   qa: '请基于之前的讲解解答学生的疑问，语气亲切，300 字以内。',
-  quiz: '请根据当前主题出题，只给题干和选项，绝不要输出答案，然后调用 submit_quiz 工具提交。',
+  quiz: '请根据当前主题出题，只给题干和选项，绝不要输出答案，然后用 submit_quiz 工具提交，不要在回复正文里复述题目。',
   grade: '学生已提交答案。请对照题目判定对错，并用 submit_grade 工具提交得分、错题解析与一个薄弱知识点。',
   remedial: '学生刚暴露了薄弱点。请针对该薄弱点重新讲解，讲得比上次更细。',
 }
