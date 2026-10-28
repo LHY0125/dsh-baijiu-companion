@@ -290,7 +290,7 @@ dsh plugin --profile web add <本包路径>
 dsh web
 ```
 
-git 安装会拉取源码而非构建产物，`prepare` 脚本负责编译 `lib/`；pnpm 默认拒绝执行它，需在 profile 的 `pnpm-workspace.yaml` 中按 pnpm 打印的完整键（含 tarball 地址与 commit 哈希）放行后重试。该路径已于 2026-10-28 实测通过：`prepare` 生成 `lib/`、配置层正常注册。
+git 安装会拉取源码而非构建产物。因此 `lib/` 作为构建产物**提交进仓库**、并移除 `prepare` 脚本，安装时无需放行任何构建脚本——这是桌面版插件管理器唯一可行的路径（它直接执行 `pnpm add`，用户无法事先编辑 `pnpm-workspace.yaml`）。维护者修改 `src/` 后必须重新 `pnpm run build` 并提交 `lib/`。该路径已于 2026-10-28 实测通过。
 
 ### 早期验证（第一步）
 
