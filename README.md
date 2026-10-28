@@ -26,6 +26,8 @@ dsh plugin --profile web add "D:\Code\doing_exercises\programs\比赛项目\baij
 
 `lib/` 是**提交进仓库**的构建产物（这样从 GitHub 安装才不需要构建权限）。修改 `src/` 后必须执行 `pnpm run build` 并连同 `lib/` 一起提交，否则远程装到的是旧代码。
 
+例外：`lib/client.js` 是**手写**的客户端产物（渲染卡片），不参与 `tsc` 构建，直接编辑即可。它必须保持 `window.__ModuleLoader__.load({ id: 'dsh-baijiu-companion', factory: (require) => … })` 的格式，`id` 等于包名。
+
 ### 启动
 
 ```powershell
@@ -50,6 +52,10 @@ dsh web
 - **`submit_grade`**：提交得分、错题解析与一个薄弱知识点。批次结束后插件自动发起一次针对薄弱点的补讲请求。
 
 两个工具始终注册，阶段不符时由代码抛错拒绝——不是靠提示词劝阻。
+
+## 显示
+
+`submit_quiz` 与 `submit_grade` 在聊天流里渲染成**白酒学伴卡片**（题目正文与批改结果直接可见），而不是默认折叠的「已调用工具」行。卡片由 `lib/client.js` 提供。
 
 ## 配置
 
